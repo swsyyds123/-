@@ -1,4 +1,21 @@
 // 前台导航页应用
+// 支持 Cloudflare KV + Worker 数据同步
+
+const CONFIG = {
+    // Cloudflare Worker API 地址
+    // 示例: 'https://your-worker.your-subdomain.workers.dev'
+    // 如果是 Cloudflare Pages Functions，可填相对路径如 '/api/data'
+    apiUrl: localStorage.setItem('nav_api_url', 'https://nav-api.2798402860.workers.dev/'),
+    
+    // 是否优先使用云端数据
+    useCloud: true,
+    
+    // 定时同步间隔（毫秒），默认 30 秒
+    syncInterval: 30000,
+    
+    // 请求超时时间
+    requestTimeout: 8000
+};
 
 class NavigationApp {
     constructor() {
@@ -15,81 +32,166 @@ class NavigationApp {
         };
         this.searchQuery = '';
         this.searchEngine = 'baidu';
+        this.lastSyncTime = 0;
+        this.syncTimer = null;
         
         this.init();
     }
 
-    init() {
-        this.loadData();
+    async init() {
+        this.showLoading();
+        await this.loadData();
         this.bindEvents();
         this.render();
         this.hideLoading();
-        
-        // 监听后台数据变化
         this.setupSyncListener();
+        this.startCloudSync();
     }
 
-    loadData() {
-        const savedCategories = localStorage.getItem('nav_categories');
-        const savedLinks = localStorage.getItem('nav_links');
-        const savedSettings = localStorage.getItem('nav_settings');
+    // ========== 数据加载 ==========
 
-        if (savedCategories) {
+    async loadData() {
+        let loaded = false;
+
+        // 1. 尝试从 Cloudflare Worker API 加载
+        if (CONFIG.useCloud && CONFIG.apiUrl) {
             try {
-                this.categories = JSON.parse(savedCategories);
-            } catch (e) {
+                const data = await this.fetchWithTimeout(
+                    `${CONFIG.apiUrl}/api/data`,
+                    { method: 'GET' },
+                    CONFIG.requestTimeout
+                );
+
+                if (data && data.categories && data.links) {
+                    this.categories = data.categories;
+                    this.links = data.links;
+                    this.settings = { ...this.settings, ...(data.settings || {}) };
+                    
+                    // 缓存到本地，实现离线可用
+                    this.cacheToLocal();
+                    loaded = true;
+                    console.log('[Nav] 已从云端加载数据');
+                }
+            } catch (err) {
+                console.warn('[Nav] 云端加载失败，使用本地缓存:', err.message);
+            }
+        }
+
+        // 2. 回退到 localStorage（离线模式或首次备用）
+        if (!loaded) {
+            const savedCategories = localStorage.getItem('nav_categories');
+            const savedLinks = localStorage.getItem('nav_links');
+            const savedSettings = localStorage.getItem('nav_settings');
+
+            if (savedCategories) {
+                try { this.categories = JSON.parse(savedCategories); } 
+                catch (e) { this.categories = this.getDefaultCategories(); }
+            } else {
                 this.categories = this.getDefaultCategories();
             }
-        } else {
-            this.categories = this.getDefaultCategories();
-        }
 
-        if (savedLinks) {
-            try {
-                this.links = JSON.parse(savedLinks);
-            } catch (e) {
+            if (savedLinks) {
+                try { this.links = JSON.parse(savedLinks); } 
+                catch (e) { this.links = this.getDefaultLinks(); }
+            } else {
                 this.links = this.getDefaultLinks();
             }
-        } else {
-            this.links = this.getDefaultLinks();
-        }
 
-        if (savedSettings) {
-            try {
-                this.settings = { ...this.settings, ...JSON.parse(savedSettings) };
-            } catch (e) {
-                // 使用默认设置
+            if (savedSettings) {
+                try { this.settings = { ...this.settings, ...JSON.parse(savedSettings) }; } 
+                catch (e) { /* 使用默认设置 */ }
             }
         }
 
         this.applySettings();
     }
 
-    saveData() {
-        // 验证数据完整性
-        if (!this.categories || !this.links || !this.settings) {
-            console.error('数据不完整，无法保存');
-            return;
+    async fetchWithTimeout(url, options = {}, timeout = 5000) {
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), timeout);
+
+        try {
+            const response = await fetch(url, {
+                ...options,
+                signal: controller.signal,
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...options.headers
+                }
+            });
+            clearTimeout(id);
+
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return await response.json();
+        } catch (error) {
+            clearTimeout(id);
+            throw error;
         }
-        
-        // 备份旧数据
-        const oldCategories = localStorage.getItem('nav_categories');
-        const oldLinks = localStorage.getItem('nav_links');
-        const oldSettings = localStorage.getItem('nav_settings');
-        
+    }
+
+    cacheToLocal() {
         try {
             localStorage.setItem('nav_categories', JSON.stringify(this.categories));
             localStorage.setItem('nav_links', JSON.stringify(this.links));
             localStorage.setItem('nav_settings', JSON.stringify(this.settings));
-            console.log('数据保存成功');
+            localStorage.setItem('nav_sync', Date.now().toString());
         } catch (e) {
-            console.error('保存数据失败，恢复备份:', e);
-            // 恢复备份数据
-            if (oldCategories) localStorage.setItem('nav_categories', oldCategories);
-            if (oldLinks) localStorage.setItem('nav_links', oldLinks);
-            if (oldSettings) localStorage.setItem('nav_settings', oldSettings);
+            console.error('[Nav] 本地缓存失败:', e);
         }
     }
+
+    // ========== 云端同步 ==========
+
+    startCloudSync() {
+        if (CONFIG.useCloud && CONFIG.apiUrl) {
+            // 首次同步后，开启定时轮询
+            this.syncTimer = setInterval(() => {
+                this.syncFromCloud();
+            }, CONFIG.syncInterval);
+        }
+    }
+
+    async syncFromCloud() {
+        if (!CONFIG.apiUrl) return;
+
+        try {
+            const response = await fetch(`${CONFIG.apiUrl}/api/data`, {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (!response.ok) return;
+
+            const data = await response.json();
+            if (!data || !data.categories) return;
+
+            // 通过 lastModified 或内容对比判断是否有更新
+            const cloudSyncTime = data.lastModified || 0;
+            const localSyncTime = parseInt(localStorage.getItem('nav_sync') || '0');
+
+            if (cloudSyncTime > localSyncTime) {
+                this.categories = data.categories;
+                this.links = data.links;
+                this.settings = { ...this.settings, ...(data.settings || {}) };
+                this.cacheToLocal();
+                this.applySettings();
+                this.render();
+                console.log('[Nav] 检测到云端更新，已自动同步');
+            }
+        } catch (err) {
+            // 静默失败，不影响用户
+            console.warn('[Nav] 定时同步检查失败:', err.message);
+        }
+    }
+
+    stopCloudSync() {
+        if (this.syncTimer) {
+            clearInterval(this.syncTimer);
+            this.syncTimer = null;
+        }
+    }
+
+    // ========== 默认数据 ==========
 
     getDefaultCategories() {
         return [
@@ -279,99 +381,94 @@ class NavigationApp {
         ];
     }
 
+    // ========== 事件绑定 ==========
+
     bindEvents() {
-        // 搜索功能
-        document.getElementById('searchInput').addEventListener('input', (e) => {
-            this.searchQuery = e.target.value.toLowerCase();
-            this.render();
-        });
+        const searchInput = document.getElementById('searchInput');
+        const searchClear = document.getElementById('searchClear');
+        const searchBtn = document.getElementById('searchBtn');
+        const searchEngine = document.getElementById('searchEngine');
+        const adminBtn = document.getElementById('adminBtn');
 
-        document.getElementById('searchInput').addEventListener('keyup', (e) => {
-            if (e.key === 'Enter') {
-                this.executeSearch();
-            }
-        });
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                this.searchQuery = e.target.value.toLowerCase();
+                this.render();
+            });
 
-        document.getElementById('searchClear').addEventListener('click', () => {
-            document.getElementById('searchInput').value = '';
-            this.searchQuery = '';
-            document.getElementById('searchClear').style.display = 'none';
-            this.render();
-        });
+            searchInput.addEventListener('keyup', (e) => {
+                if (e.key === 'Enter') this.executeSearch();
+            });
+        }
 
-        // 搜索按钮
-        document.getElementById('searchBtn').addEventListener('click', () => {
-            this.executeSearch();
-        });
+        if (searchClear) {
+            searchClear.addEventListener('click', () => {
+                searchInput.value = '';
+                this.searchQuery = '';
+                searchClear.style.display = 'none';
+                this.render();
+            });
+        }
 
-        // 搜索引擎选择
-        document.getElementById('searchEngine').addEventListener('change', (e) => {
-            this.searchEngine = e.target.value;
-        });
+        if (searchBtn) {
+            searchBtn.addEventListener('click', () => this.executeSearch());
+        }
 
-        // 管理按钮跳转
-        document.getElementById('adminBtn').addEventListener('click', () => {
-            window.location.href = 'admin.html';
-        });
+        if (searchEngine) {
+            searchEngine.addEventListener('change', (e) => {
+                this.searchEngine = e.target.value;
+            });
+        }
 
-        // 点击遮罩关闭弹窗
+        if (adminBtn) {
+            adminBtn.addEventListener('click', () => {
+                window.location.href = 'admin.html';
+            });
+        }
+
         document.querySelectorAll('.modal-overlay').forEach(overlay => {
             overlay.addEventListener('click', (e) => {
-                if (e.target === overlay) {
-                    this.closeAllModals();
-                }
+                if (e.target === overlay) this.closeAllModals();
             });
         });
 
-        // ESC键关闭弹窗
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                this.closeAllModals();
-            }
+            if (e.key === 'Escape') this.closeAllModals();
         });
     }
 
     executeSearch() {
         const query = document.getElementById('searchInput').value.trim();
-        
         if (!query) return;
 
         if (this.searchEngine === 'nav') {
-            // 在导航中搜索
             this.searchQuery = query.toLowerCase();
             this.render();
         } else {
-            // 使用搜索引擎搜索
             const urls = {
                 google: `https://www.google.com/search?q=${encodeURIComponent(query)}`,
                 baidu: `https://www.baidu.com/s?wd=${encodeURIComponent(query)}`,
                 bing: `https://www.bing.com/search?q=${encodeURIComponent(query)}`
             };
-            
             window.open(urls[this.searchEngine], '_blank');
         }
     }
 
+    // ========== 设置应用 ==========
+
     applySettings() {
-        // 应用主题颜色
         document.documentElement.style.setProperty('--primary-color', this.settings.themeColor);
         document.documentElement.style.setProperty('--primary-hover', this.adjustColor(this.settings.themeColor, -20));
 
-        // 应用背景样式
         this.applyBackground();
 
-        // 应用字体大小
         document.body.className = document.body.className.replace(/font-\w+/g, '') + ` font-${this.settings.fontSize}`;
-
-        // 应用布局样式
         document.body.className = document.body.className.replace(/layout-\w+/g, '') + ` layout-${this.settings.layout}`;
 
-        // 更新网站标题
         this.updateSiteTitle();
     }
 
     applyBackground() {
-        // 移除所有背景类
         document.body.classList.remove('bg-gradient1', 'bg-gradient2', 'bg-gradient3', 'bg-solid', 'bg-custom');
         
         if (this.settings.backgroundStyle === 'custom' && this.settings.backgroundImage) {
@@ -386,7 +483,8 @@ class NavigationApp {
     updateSiteTitle() {
         const logo = document.getElementById('siteLogo');
         if (logo) {
-            logo.querySelector('span').textContent = this.settings.siteTitle || '导航中心';
+            const span = logo.querySelector('span');
+            if (span) span.textContent = this.settings.siteTitle || '导航中心';
         }
     }
 
@@ -399,8 +497,12 @@ class NavigationApp {
         return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
     }
 
+    // ========== 渲染 ==========
+
     render() {
         const container = document.getElementById('categoriesContainer');
+        if (!container) return;
+        
         const sortedCategories = [...this.categories].sort((a, b) => a.order - b.order);
         
         container.innerHTML = '';
@@ -410,7 +512,6 @@ class NavigationApp {
                 .filter(link => link.categoryId === category.id)
                 .sort((a, b) => a.order - b.order);
             
-            // 搜索过滤
             let filteredLinks = categoryLinks;
             if (this.searchEngine === 'nav' && this.searchQuery) {
                 filteredLinks = categoryLinks.filter(link => 
@@ -439,19 +540,28 @@ class NavigationApp {
             container.appendChild(wrapper);
         });
 
-        // 更新搜索清除按钮状态
-        document.getElementById('searchClear').style.display = 
-            this.searchQuery ? 'block' : 'none';
+        const searchClear = document.getElementById('searchClear');
+        if (searchClear) {
+            searchClear.style.display = this.searchQuery ? 'block' : 'none';
+        }
     }
 
+    // ========== 弹窗控制 ==========
+
     openModal(id) {
-        document.getElementById(id).classList.add('active');
-        document.body.style.overflow = 'hidden';
+        const modal = document.getElementById(id);
+        if (modal) {
+            modal.classList.add('active');
+            document.body.style.overflow = 'hidden';
+        }
     }
 
     closeModal(id) {
-        document.getElementById(id).classList.remove('active');
-        document.body.style.overflow = '';
+        const modal = document.getElementById(id);
+        if (modal) {
+            modal.classList.remove('active');
+            document.body.style.overflow = '';
+        }
     }
 
     closeAllModals() {
@@ -459,6 +569,16 @@ class NavigationApp {
             overlay.classList.remove('active');
         });
         document.body.style.overflow = '';
+    }
+
+    // ========== 加载动画 ==========
+
+    showLoading() {
+        const loading = document.getElementById('loadingOverlay');
+        if (loading) {
+            loading.style.display = 'flex';
+            loading.style.opacity = '1';
+        }
     }
 
     hideLoading() {
@@ -473,22 +593,22 @@ class NavigationApp {
         }, 500);
     }
 
+    // ========== 同步监听 ==========
+
     setupSyncListener() {
-        // 监听 localStorage 变化，实现前后台同步
+        // 监听 localStorage 变化（同一浏览器多标签页同步）
         window.addEventListener('storage', (e) => {
             if (e.key === 'nav_sync') {
-                this.loadData();
-                this.render();
+                this.loadData().then(() => this.render());
             }
         });
 
-        // 定时检查更新（针对同一窗口打开的情况）
+        // 定时检查本地同步标记（同一窗口内检测 admin 页面修改）
         setInterval(() => {
             const syncTime = localStorage.getItem('nav_sync');
             if (syncTime && syncTime !== this.lastSyncTime) {
                 this.lastSyncTime = syncTime;
-                this.loadData();
-                this.render();
+                this.loadData().then(() => this.render());
             }
         }, 1000);
     }
@@ -515,7 +635,7 @@ class NavigationApp {
         setTimeout(() => {
             toast.style.opacity = '0';
             setTimeout(() => {
-                document.body.removeChild(toast);
+                if (toast.parentNode) document.body.removeChild(toast);
             }, 300);
         }, 2000);
     }
