@@ -1,21 +1,7 @@
 // 前台导航页应用
-// 支持 Cloudflare KV + Worker 数据同步
+// 支持 Cloudflare Workers API + 本地缓存
 
-const CONFIG = {
-    // Cloudflare Worker API 地址
-    // 示例: 'https://your-worker.your-subdomain.workers.dev'
-    // 如果是 Cloudflare Pages Functions，可填相对路径如 '/api/data'
-    apiUrl: localStorage.setItem('nav_api_url', 'https://nav-api.2798402860.workers.dev/'),
-    
-    // 是否优先使用云端数据
-    useCloud: true,
-    
-    // 定时同步间隔（毫秒），默认 30 秒
-    syncInterval: 30000,
-    
-    // 请求超时时间
-    requestTimeout: 8000
-};
+const API_URL = 'https://nav-api.2798402860.workers.dev';
 
 class NavigationApp {
     constructor() {
@@ -53,16 +39,16 @@ class NavigationApp {
     async loadData() {
         let loaded = false;
 
-        // 1. 尝试从 Cloudflare Worker API 加载
-        if (CONFIG.useCloud && CONFIG.apiUrl) {
-            try {
-                const data = await this.fetchWithTimeout(
-                    `${CONFIG.apiUrl}/api/data`,
-                    { method: 'GET' },
-                    CONFIG.requestTimeout
-                );
+        // 1. 优先从 Cloudflare Workers API 加载
+        try {
+            const response = await fetch(`${API_URL}/api/data`, {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' }
+            });
 
-                if (data && data.categories && data.links) {
+            if (response.ok) {
+                const data = await response.json();
+                if (data.categories && data.categories.length > 0) {
                     this.categories = data.categories;
                     this.links = data.links;
                     this.settings = { ...this.settings, ...(data.settings || {}) };
@@ -72,9 +58,9 @@ class NavigationApp {
                     loaded = true;
                     console.log('[Nav] 已从云端加载数据');
                 }
-            } catch (err) {
-                console.warn('[Nav] 云端加载失败，使用本地缓存:', err.message);
             }
+        } catch (err) {
+            console.warn('[Nav] 云端加载失败，使用本地缓存:', err.message);
         }
 
         // 2. 回退到 localStorage（离线模式或首次备用）
@@ -99,34 +85,11 @@ class NavigationApp {
 
             if (savedSettings) {
                 try { this.settings = { ...this.settings, ...JSON.parse(savedSettings) }; } 
-                catch (e) { /* 使用默认设置 */ }
+                catch (e) {}
             }
         }
 
         this.applySettings();
-    }
-
-    async fetchWithTimeout(url, options = {}, timeout = 5000) {
-        const controller = new AbortController();
-        const id = setTimeout(() => controller.abort(), timeout);
-
-        try {
-            const response = await fetch(url, {
-                ...options,
-                signal: controller.signal,
-                headers: {
-                    'Content-Type': 'application/json',
-                    ...options.headers
-                }
-            });
-            clearTimeout(id);
-
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            return await response.json();
-        } catch (error) {
-            clearTimeout(id);
-            throw error;
-        }
     }
 
     cacheToLocal() {
@@ -143,19 +106,15 @@ class NavigationApp {
     // ========== 云端同步 ==========
 
     startCloudSync() {
-        if (CONFIG.useCloud && CONFIG.apiUrl) {
-            // 首次同步后，开启定时轮询
-            this.syncTimer = setInterval(() => {
-                this.syncFromCloud();
-            }, CONFIG.syncInterval);
-        }
+        // 每 30 秒检查一次云端是否有更新
+        this.syncTimer = setInterval(() => {
+            this.syncFromCloud();
+        }, 30000);
     }
 
     async syncFromCloud() {
-        if (!CONFIG.apiUrl) return;
-
         try {
-            const response = await fetch(`${CONFIG.apiUrl}/api/data`, {
+            const response = await fetch(`${API_URL}/api/data`, {
                 method: 'GET',
                 headers: { 'Content-Type': 'application/json' }
             });
@@ -165,11 +124,11 @@ class NavigationApp {
             const data = await response.json();
             if (!data || !data.categories) return;
 
-            // 通过 lastModified 或内容对比判断是否有更新
-            const cloudSyncTime = data.lastModified || 0;
-            const localSyncTime = parseInt(localStorage.getItem('nav_sync') || '0');
+            // 通过 updatedAt 判断是否有更新
+            const cloudTime = data.updatedAt || 0;
+            const localTime = parseInt(localStorage.getItem('nav_sync') || '0');
 
-            if (cloudSyncTime > localSyncTime) {
+            if (cloudTime > localTime) {
                 this.categories = data.categories;
                 this.links = data.links;
                 this.settings = { ...this.settings, ...(data.settings || {}) };
@@ -180,7 +139,6 @@ class NavigationApp {
             }
         } catch (err) {
             // 静默失败，不影响用户
-            console.warn('[Nav] 定时同步检查失败:', err.message);
         }
     }
 
@@ -213,7 +171,6 @@ class NavigationApp {
 
     getDefaultLinks() {
         return [
-            // 嫖之呼吸
             { id: '1', categoryId: '1', name: '炫猿', url: 'http://xydh.fun', order: 0 },
             { id: '2', categoryId: '1', name: 'YouTube', url: 'https://www.youtube.com/', order: 1 },
             { id: '3', categoryId: '1', name: '小鸡词典', url: 'https://jikipedia.com/', order: 2 },
@@ -222,7 +179,6 @@ class NavigationApp {
             { id: '6', categoryId: '1', name: '孟坤工具箱', url: 'http://lab.mkblog.cn/', order: 5 },
             { id: '7', categoryId: '1', name: '伸手党克星', url: 'https://btfy.eu.org/', order: 6 },
             { id: '8', categoryId: '1', name: 'Yandex', url: 'https://yandex.com/', order: 7 },
-            // 嫖之呼吸-动漫
             { id: '9', categoryId: '2', name: 'AGE动漫', url: 'https://www.agedm.io/', order: 0 },
             { id: '10', categoryId: '2', name: '打驴动漫', url: 'https://www.dalvdm.cc/', order: 1 },
             { id: '11', categoryId: '2', name: '嘀哩嘀哩', url: 'https://www.dilidili23.com/', order: 2 },
@@ -236,7 +192,6 @@ class NavigationApp {
             { id: '19', categoryId: '2', name: '动漫花园', url: 'https://animes.garden/', order: 10 },
             { id: '20', categoryId: '2', name: '4K动漫', url: 'https://cn.agekkkk.com/', order: 11 },
             { id: '21', categoryId: '2', name: '嗷呜动漫', url: 'https://www.aowu.tv/', order: 12 },
-            // 嫖之呼吸-电影
             { id: '22', categoryId: '3', name: '七味', url: 'https://www.pkavi.com/', order: 0 },
             { id: '23', categoryId: '3', name: '欧豹影院', url: 'https://www.obzhi.com/', order: 1 },
             { id: '24', categoryId: '3', name: 'LIBVIO', url: 'https://www.libvio.app/', order: 2 },
@@ -251,7 +206,6 @@ class NavigationApp {
             { id: '33', categoryId: '3', name: '茶杯狐', url: 'https://www.acupfox.com/', order: 11 },
             { id: '34', categoryId: '3', name: '完整剧名', url: 'https://quarksoo.cc/search.php', order: 12 },
             { id: '35', categoryId: '3', name: '盘链', url: 'https://pinglian.lol/index.php', order: 13 },
-            // 嫖之呼吸-壁纸
             { id: '36', categoryId: '4', name: '极简壁纸', url: 'https://bz.zzzmh.cn/', order: 0 },
             { id: '37', categoryId: '4', name: '搜图导航', url: 'https://www.91sotu.com/', order: 1 },
             { id: '38', categoryId: '4', name: '画师通', url: 'https://www.huashi6.com/', order: 2 },
@@ -260,7 +214,6 @@ class NavigationApp {
             { id: '41', categoryId: '4', name: 'Yuumei', url: 'https://www.yuumeiart.com/', order: 5 },
             { id: '42', categoryId: '4', name: 'MyLive', url: 'https://mylivewallpapers.com/', order: 6 },
             { id: '43', categoryId: '4', name: '4K壁纸', url: 'https://haowallpaper.com/homeView', order: 7 },
-            // 嫖之呼吸-游戏
             { id: '44', categoryId: '5', name: '吾爱破解', url: 'https://www.52pojie.cn/', order: 0 },
             { id: '45', categoryId: '5', name: '刀网', url: 'https://www.x6d.com/', order: 1 },
             { id: '46', categoryId: '5', name: 'switch游戏下载', url: 'https://www.gamer520.com/', order: 2 },
@@ -273,7 +226,6 @@ class NavigationApp {
             { id: '53', categoryId: '5', name: 'BT之家', url: 'https://www.1lou.me/', order: 9 },
             { id: '54', categoryId: '5', name: '游戏分享社区', url: 'https://www.gameshare.cc/', order: 10 },
             { id: '55', categoryId: '5', name: 'All Games', url: 'https://ankergames.net/games-list', order: 11 },
-            // 常用办公
             { id: '56', categoryId: '6', name: '文件格式转换', url: 'https://www.aconvert.com/', order: 0 },
             { id: '57', categoryId: '6', name: 'iKuuu', url: 'https://ikuuu.win/auth/login', order: 1 },
             { id: '58', categoryId: '6', name: '软仓', url: 'https://www.ruancang.net/', order: 2 },
@@ -287,7 +239,6 @@ class NavigationApp {
             { id: '66', categoryId: '6', name: 'AI配音', url: 'https://acgn.ttson.cn/', order: 10 },
             { id: '67', categoryId: '6', name: '微信网页版', url: 'https://szfilehelper.weixin.qq.com/', order: 11 },
             { id: '68', categoryId: '6', name: '图床', url: 'https://imgloc.com/', order: 12 },
-            // 白嫖通道
             { id: '69', categoryId: '7', name: 'MyFreeMP3', url: 'http://tool.liumingye.cn/music/', order: 0 },
             { id: '70', categoryId: '7', name: '折飞机大全', url: 'https://www.foldnfly.com/#/1-1-1-1-1-1-1-1-2', order: 1 },
             { id: '71', categoryId: '7', name: '果核剥壳', url: 'https://www.ghpym.com/', order: 2 },
@@ -303,7 +254,6 @@ class NavigationApp {
             { id: '81', categoryId: '7', name: 'ScriptCat', url: 'https://scriptcat.org/zh-CN/search', order: 12 },
             { id: '82', categoryId: '7', name: '软件社', url: 'https://www.sncys.com/', order: 13 },
             { id: '83', categoryId: '7', name: '克隆窝', url: 'https://www.uy5.net/', order: 14 },
-            // 模板下载
             { id: '84', categoryId: '8', name: '简历模板', url: 'https://www.51386.com/', order: 0 },
             { id: '85', categoryId: '8', name: '模之屋', url: 'https://www.aplaybox.com/', order: 1 },
             { id: '86', categoryId: '8', name: '优品PPT', url: 'https://www.ypppt.com/', order: 2 },
@@ -312,7 +262,6 @@ class NavigationApp {
             { id: '89', categoryId: '8', name: '51PPT', url: 'https://www.51pptmoban.com/', order: 5 },
             { id: '90', categoryId: '8', name: 'PPTfans', url: 'https://www.pptfans.cn/', order: 6 },
             { id: '91', categoryId: '8', name: '起兮抠图', url: 'http://matting.deeplor.com/', order: 7 },
-            // AI领头羊
             { id: '92', categoryId: '9', name: 'AIchatOS', url: 'https://chat18.aichatos.xyz/', order: 0 },
             { id: '93', categoryId: '9', name: '深度AI导航', url: 'https://www.deepdhai.com/', order: 1 },
             { id: '94', categoryId: '9', name: '文心一言', url: 'https://yiyan.baidu.com/', order: 2 },
@@ -327,7 +276,6 @@ class NavigationApp {
             { id: '103', categoryId: '9', name: '最伟大的AI', url: 'https://flo.ing/blank', order: 11 },
             { id: '104', categoryId: '9', name: 'LMArena', url: 'https://lmarena.ai/', order: 12 },
             { id: '105', categoryId: '9', name: 'Gemini', url: 'https://aistudio.google.com/', order: 13 },
-            // 私人专用
             { id: '106', categoryId: '10', name: 'ALL', url: 'https://theporndude.vip/', order: 0 },
             { id: '107', categoryId: '10', name: '百合大法', url: 'https://yuriimg.com/', order: 1 },
             { id: '108', categoryId: '10', name: 'ASMR Online', url: 'https://asmr.one/works', order: 2 },
@@ -340,7 +288,6 @@ class NavigationApp {
             { id: '115', categoryId: '10', name: 'Artists', url: 'https://coomer.su/artists', order: 9 },
             { id: '116', categoryId: '10', name: '四色', url: 'http://www.55nana.com', order: 10 },
             { id: '117', categoryId: '10', name: 'sex论坛', url: 'https://169bt.com/forum.php', order: 11 },
-            // 其他导航
             { id: '118', categoryId: '11', name: '萌站', url: 'http://moe321.com/', order: 0 },
             { id: '119', categoryId: '11', name: 'FOREVER', url: 'https://xydh.fun/wxcs0407forever', order: 1 },
             { id: '120', categoryId: '11', name: '52111', url: 'https://xydh.fun/swsyyds', order: 2 },
@@ -355,7 +302,6 @@ class NavigationApp {
             { id: '129', categoryId: '11', name: '爱达杂货铺', url: 'https://adzhp.cc/', order: 11 },
             { id: '130', categoryId: '11', name: '零度博客', url: 'https://www.freedidi.com/', order: 12 },
             { id: '131', categoryId: '11', name: '开发者导航', url: 'https://codernav.com/', order: 13 },
-            // 有趣
             { id: '132', categoryId: '12', name: '逗比表情包', url: 'https://www.dbbqb.com/', order: 0 },
             { id: '133', categoryId: '12', name: '有趣网址之家', url: 'https://youquhome.com/', order: 1 },
             { id: '134', categoryId: '12', name: '听雨声', url: 'https://www.rainymood.com/', order: 2 },
@@ -365,7 +311,6 @@ class NavigationApp {
             { id: '138', categoryId: '12', name: 'DiskGirl', url: 'https://diskgirl.com/pc.html', order: 6 },
             { id: '139', categoryId: '12', name: '童年模拟器', url: 'https://lemonjing.com/childhood/', order: 7 },
             { id: '140', categoryId: '12', name: '奇趣收藏', url: 'https://fuun.fun/', order: 8 },
-            // 各站合集
             { id: '141', categoryId: '13', name: 'A站', url: 'https://www.acfun.cn/', order: 0 },
             { id: '142', categoryId: '13', name: 'B站', url: 'https://www.bilibili.com/', order: 1 },
             { id: '143', categoryId: '13', name: 'C站', url: 'https://www.clicli.cc/', order: 2 },
