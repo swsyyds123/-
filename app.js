@@ -543,23 +543,26 @@ async syncFromCloud() {
 
     // ========== 同步监听 ==========
 
-    setupSyncListener() {
-        // 监听 localStorage 变化（同一浏览器多标签页同步）
-        window.addEventListener('storage', (e) => {
-            if (e.key === 'nav_sync') {
-                this.loadData().then(() => this.render());
-            }
-        });
+setupSyncListener() {
+    // 监听 localStorage 变化（同一浏览器多标签页同步）
+    window.addEventListener('storage', (e) => {
+        if (e.key === 'nav_sync') {
+            this.loadData().then(() => this.render());
+        }
+    });
 
-        // 定时检查本地同步标记（同一窗口内检测 admin 页面修改）
-        setInterval(() => {
-            const syncTime = localStorage.getItem('nav_sync');
-            if (syncTime && syncTime !== this.lastSyncTime) {
-                this.lastSyncTime = syncTime;
-                this.loadData().then(() => this.render());
-            }
-        }, 1000);
-    }
+    // 定时检查本地同步标记（同一窗口内检测 admin 页面修改）
+    // 修复：记录上次检查的时间戳，避免自己触发自己
+    this.lastCheckedSync = localStorage.getItem('nav_sync') || '0';
+    
+    setInterval(() => {
+        const syncTime = localStorage.getItem('nav_sync');
+        if (syncTime && syncTime !== this.lastCheckedSync) {
+            this.lastCheckedSync = syncTime;
+            this.loadData().then(() => this.render());
+        }
+    }, 1000);
+}
 
     showToast(message) {
         const toast = document.createElement('div');
