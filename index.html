@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>导航页</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div id="app">
+        <header class="header" id="header">
+            <div class="header-content">
+                <div class="logo" id="siteLogo">
+                    <span>导航中心</span>
+                </div>
+                <div class="header-actions">
+                    <button class="settings-btn" id="adminBtn" title="后台管理">
+                        <i class="fas fa-cog"></i>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <div class="search-section">
+            <div class="search-container">
+                <select id="searchEngine" class="search-engine-select">
+                    <option value="google">Google</option>
+                    <option value="baidu" selected>百度</option>
+                    <option value="bing">Bing</option>
+                    <option value="nav">导航</option>
+                </select>
+                <div class="search-input-wrapper">
+                    <input
+                        type="text"
+                        id="searchInput"
+                        placeholder="搜索..."
+                        class="search-input"
+                    >
+                    <button class="search-clear" id="searchClear" style="display: none;">
+                        ×
+                    </button>
+                </div>
+                <button class="search-btn" id="searchBtn">
+                    <i class="fas fa-search"></i>
+                </button>
+            </div>
+        </div>
+
+        <main class="main-content">
+            <div id="categoriesContainer" class="categories-container"></div>
+        </main>
+
+        <footer class="footer">
+            <nav class="footer-links" aria-label="底部导航">
+                <a href="index.html">首页</a>
+                <a href="about.html">关于我们</a>
+                <a href="feedback.html">用户反馈</a>
+                <a href="admin.html">后台管理</a>
+            </nav>
+            <p>导航页应用 © 2024</p>
+        </footer>
+    </div>
+
+    <div id="confirmModal" class="modal-overlay">
+        <div class="modal-content small-modal">
+            <div class="modal-header">
+                <h2>确认删除</h2>
+                <button class="modal-close" id="confirmModalClose">
+                    ×
+                </button>
+            </div>
+            <div class="modal-body">
+                <p id="confirmMessage">确定要删除吗？</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="confirmCancel">取消</button>
+                <button class="btn btn-danger" id="confirmDelete">删除</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            <p>加载中...</p>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

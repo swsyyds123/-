@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>用户反馈 - 导航页</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="static-page">
+    <header class="static-header-full">
+        <div class="header-container">
+            <a href="index.html" class="static-brand">
+                <i class="fas fa-compass"></i>
+                <span>导航中心</span>
+            </a>
+            <nav class="static-nav" aria-label="主导航">
+                <a href="index.html">首页</a>
+                <a href="about.html">关于我们</a>
+                <a href="feedback.html" class="active" aria-current="page">用户反馈</a>
+                <a href="admin.html">后台管理</a>
+            </nav>
+            <button class="mobile-menu-toggle" id="mobileMenuToggle" aria-label="菜单" aria-expanded="false">
+                <i class="fas fa-bars"></i>
+            </button>
+        </div>
+    </header>
+
+    <main class="static-main feedback-main">
+        <div class="feedback-layout">
+            <section class="feedback-left">
+                <div class="feedback-heading">
+                    <p class="static-eyebrow">Feedback</p>
+                    <h1>你的建议会让这个导航站更好用。</h1>
+                    <p>可以留下想收录的网站、分类建议、界面想法，或者任何使用时不顺手的地方。</p>
+                </div>
+
+                <section class="feedback-form-section" aria-labelledby="form-title">
+                    <h2 id="form-title" class="visually-hidden">提交反馈表单</h2>
+                    <form class="feedback-form" id="feedbackForm" novalidate>
+                        <div class="form-group">
+                            <label for="feedbackName">昵称 <span class="optional">(可选)</span></label>
+                            <input type="text" id="feedbackName" placeholder="怎么称呼你" maxlength="50" aria-describedby="nameHelp">
+                            <span id="nameHelp" class="form-help">最多50个字符</span>
+                            <span class="error-message" id="nameError" role="alert" aria-live="polite"></span>
+                        </div>
+                        <div class="form-group">
+                            <label for="feedbackType">建议类型</label>
+                            <div class="select-wrapper">
+                                <select id="feedbackType" required aria-required="true">
+                                    <option value="">请选择建议类型</option>
+                                    <option value="网站收录">网站收录</option>
+                                    <option value="分类优化">分类优化</option>
+                                    <option value="界面体验">界面体验</option>
+                                    <option value="功能建议">功能建议</option>
+                                    <option value="其他想法">其他想法</option>
+                                </select>
+                                <i class="fas fa-chevron-down select-arrow"></i>
+                            </div>
+                            <span class="error-message" id="typeError" role="alert" aria-live="polite"></span>
+                        </div>
+                        <div class="form-group">
+                            <label for="feedbackText">建议内容 <span class="required">*</span></label>
+                            <textarea id="feedbackText" rows="5" placeholder="写下你的建议..." required aria-required="true" maxlength="1000" aria-describedby="contentHelp contentCount"></textarea>
+                            <div class="textarea-footer">
+                                <span id="contentHelp" class="form-help">最多1000个字符</span>
+                                <span id="contentCount" class="char-count"><span id="currentCount">0</span>/1000</span>
+                            </div>
+                            <span class="error-message" id="contentError" role="alert" aria-live="polite"></span>
+                        </div>
+                        <button type="submit" class="btn btn-primary" id="submitBtn">
+                            <i class="fas fa-paper-plane"></i>
+                            <span>提交建议</span>
+                            <span class="loading-spinner" aria-hidden="true">
+                                <i class="fas fa-spinner fa-spin"></i>
+                            </span>
+                        </button>
+                    </form>
+                    <div class="feedback-result" id="feedbackResult" role="status" aria-live="polite"></div>
+                </section>
+            </section>
+
+            <section class="feedback-right" aria-labelledby="feedback-list-title">
+                <div class="feedback-list-header">
+                    <h2 id="feedback-list-title">
+                        <i class="fas fa-comments"></i>
+                        社区反馈
+                        <span class="feedback-count" id="feedbackCount">0</span>
+                    </h2>
+                    <button class="btn btn-sm btn-secondary" id="refreshBtn" aria-label="刷新列表">
+                        <i class="fas fa-sync-alt"></i>
+                        <span>刷新</span>
+                    </button>
+                </div>
+                <div class="suggestion-list" id="suggestionList" role="feed" aria-busy="false">
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <footer class="footer">
+        <nav class="footer-links" aria-label="底部导航">
+            <a href="index.html">首页</a>
+            <a href="about.html">关于我们</a>
+            <a href="feedback.html">用户反馈</a>
+            <a href="admin.html">后台管理</a>
+        </nav>
+        <p>导航页应用 © 2024</p>
+    </footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const defaultSuggestions = [
+                { id: 'sys-1', name: '系统提示', type: '功能建议', content: '欢迎使用反馈系统！您的每一条建议都将帮助我们做得更好。', createdAt: Date.now() - 86400000, isSystem: true },
+                { id: 'sys-2', name: '热心用户', type: '界面体验', content: '建议增加深色模式，对眼睛更友好，特别是夜间使用时。', createdAt: Date.now() - 172800000, isSystem: true },
+                { id: 'sys-3', name: '网站爱好者', type: '网站收录', content: '希望能收录更多免费教育资源，方便学习和查找。', createdAt: Date.now() - 259200000, isSystem: true },
+                { id: 'sys-4', name: '产品经理', type: '功能建议', content: '增加书签导入导出功能，方便在不同设备间同步收藏。', createdAt: Date.now() - 345600000, isSystem: true }
+            ];
+
+            function getFeedback() {
+                const stored = localStorage.getItem('nav_feedback');
+                const userFeedback = stored ? JSON.parse(stored) : [];
+                return [...userFeedback, ...defaultSuggestions];
+            }
+
+            function saveUserFeedback(feedback) {
+                localStorage.setItem('nav_feedback', JSON.stringify(feedback));
+            }
+
+            function formatTime(timestamp) {
+                const now = Date.now();
+                const diff = now - timestamp;
+                const seconds = Math.floor(diff / 1000);
+                const minutes = Math.floor(seconds / 60);
+                const hours = Math.floor(minutes / 60);
+                const days = Math.floor(hours / 24);
+
+                if (days > 0) return days + '天前';
+                if (hours > 0) return hours + '小时前';
+                if (minutes > 0) return minutes + '分钟前';
+                return '刚刚';
+            }
+
+            function renderFeedback() {
+                const container = document.getElementById('suggestionList');
+                const feedback = getFeedback();
+                const count = document.getElementById('feedbackCount');
+                count.textContent = feedback.length;
+
+                if (feedback.length === 0) {
+                    container.innerHTML = '<div class="empty-state"><i class="fas fa-inbox"></i><p>暂无反馈，快来发表第一条建议吧！</p></div>';
+                    return;
+                }
+
+                container.innerHTML = feedback.map(item => `
+                    <article class="suggestion-item ${item.isSystem ? 'system-item' : ''}" role="article">
+                        <div class="suggestion-header">
+                            <div class="suggestion-author">
+                                <i class="fas ${item.isSystem ? 'fa-robot' : 'fa-user'}"></i>
+                                <span class="author-name">${item.name}</span>
+                                ${item.isSystem ? '<span class="system-badge">示例</span>' : ''}
+                            </div>
+                            <span class="suggestion-time">${formatTime(item.createdAt)}</span>
+                        </div>
+                        <span class="suggestion-type">${item.type}</span>
+                        <p class="suggestion-content">${item.content}</p>
+                    </article>
+                `).join('');
+
+                container.setAttribute('aria-busy', 'false');
+            }
+
+            function validateForm() {
+                let isValid = true;
+                clearErrors();
+
+                const name = document.getElementById('feedbackName');
+                const type = document.getElementById('feedbackType');
+                const content = document.getElementById('feedbackText');
+
+                if (name.value.length > 50) {
+                    showError('nameError', '昵称不能超过50个字符');
+                    isValid = false;
+                }
+
+                if (!type.value) {
+                    showError('typeError', '请选择建议类型');
+                    isValid = false;
+                }
+
+                if (!content.value.trim()) {
+                    showError('contentError', '请输入建议内容');
+                    isValid = false;
+                } else if (content.value.trim().length < 10) {
+                    showError('contentError', '建议内容至少需要10个字符');
+                    isValid = false;
+                } else if (content.value.length > 1000) {
+                    showError('contentError', '建议内容不能超过1000个字符');
+                    isValid = false;
+                }
+
+                return isValid;
+            }
+
+            function showError(elementId, message) {
+                const element = document.getElementById(elementId);
+                if (element) {
+                    element.textContent = message;
+                    element.classList.add('show');
+                }
+            }
+
+            function clearErrors() {
+                document.querySelectorAll('.error-message').forEach(el => {
+                    el.textContent = '';
+                    el.classList.remove('show');
+                });
+            }
+
+            function showResult(message, isSuccess = true) {
+                const result = document.getElementById('feedbackResult');
+                result.innerHTML = `
+                    <div class="result-content ${isSuccess ? 'success' : 'error'}">
+                        <i class="fas ${isSuccess ? 'fa-check-circle' : 'fa-exclamation-circle'}"></i>
+                        <span>${message}</span>
+                    </div>
+                `;
+                result.classList.add('show');
+
+                if (isSuccess) {
+                    setTimeout(() => {
+                        result.classList.remove('show');
+                    }, 3000);
+                }
+            }
+
+            const form = document.getElementById('feedbackForm');
+            const submitBtn = document.getElementById('submitBtn');
+            const contentTextarea = document.getElementById('feedbackText');
+            const currentCount = document.getElementById('currentCount');
+
+            contentTextarea.addEventListener('input', function() {
+                currentCount.textContent = this.value.length;
+                if (this.value.length > 900) {
+                    currentCount.parentElement.classList.add('warning');
+                } else {
+                    currentCount.parentElement.classList.remove('warning');
+                }
+            });
+
+            form.addEventListener('submit', async function(event) {
+                event.preventDefault();
+
+                if (!validateForm()) {
+                    showResult('请检查表单填写是否正确', false);
+                    return;
+                }
+
+                submitBtn.disabled = true;
+                submitBtn.classList.add('loading');
+
+                await new Promise(resolve => setTimeout(resolve, 500));
+
+                try {
+                    const name = document.getElementById('feedbackName').value.trim() || '匿名用户';
+                    const type = document.getElementById('feedbackType').value;
+                    const content = document.getElementById('feedbackText').value.trim();
+
+                    const existingFeedback = localStorage.getItem('nav_feedback');
+                    const feedback = existingFeedback ? JSON.parse(existingFeedback) : [];
+
+                    const newFeedback = {
+                        id: Date.now().toString(),
+                        name: name,
+                        type: type,
+                        content: content,
+                        createdAt: Date.now()
+                    };
+
+                    feedback.unshift(newFeedback);
+                    localStorage.setItem('nav_feedback', JSON.stringify(feedback));
+
+                    renderFeedback();
+                    form.reset();
+                    currentCount.textContent = '0';
+                    showResult('感谢您的反馈！您的建议已成功提交。', true);
+
+                } catch (error) {
+                    console.error('提交失败:', error);
+                    showResult('提交失败，请稍后重试。', false);
+                } finally {
+                    submitBtn.disabled = false;
+                    submitBtn.classList.remove('loading');
+                }
+            });
+
+            document.getElementById('refreshBtn').addEventListener('click', function() {
+                const icon = this.querySelector('i');
+                icon.classList.add('fa-spin');
+                document.getElementById('suggestionList').setAttribute('aria-busy', 'true');
+
+                setTimeout(() => {
+                    renderFeedback();
+                    icon.classList.remove('fa-spin');
+                }, 300);
+            });
+
+            const mobileToggle = document.getElementById('mobileMenuToggle');
+            const staticNav = document.querySelector('.static-nav');
+
+            if (mobileToggle) {
+                mobileToggle.addEventListener('click', function() {
+                    const isExpanded = this.getAttribute('aria-expanded') === 'true';
+                    this.setAttribute('aria-expanded', !isExpanded);
+                    staticNav.classList.toggle('mobile-open');
+                    this.querySelector('i').className = isExpanded ? 'fas fa-bars' : 'fas fa-times';
+                });
+            }
+
+            renderFeedback();
+        });
+    </script>
+</body>
+</html>
