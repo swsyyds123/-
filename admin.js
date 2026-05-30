@@ -1,5 +1,8 @@
-// 后台管理页面
+// ========== API 配置 ==========
+const API_URL = 'https://nav-api.2798402860.workers.dev';
+const ADMIN_PASSWORD = '123..sws..716';
 
+// 后台管理页面
 class AdminApp {
     constructor() {
         if (!this.isAuthenticated()) {
@@ -57,70 +60,122 @@ class AdminApp {
         this.updateSettingsUI();
     }
 
+    // ========== 从 Cloudflare Workers API 加载数据 ==========
     loadData() {
-        const savedCategories = localStorage.getItem('nav_categories');
-        const savedLinks = localStorage.getItem('nav_links');
-        const savedSettings = localStorage.getItem('nav_settings');
+        fetch(`${API_URL}/api/data`)
+            .then(res => {
+                if (!res.ok) throw new Error('API 请求失败');
+                return res.json();
+            })
+            .then(data => {
+                console.log('从 API 加载数据成功:', data);
+                if (data.categories && data.categories.length > 0) {
+                    this.categories = data.categories;
+                } else {
+                    this.categories = this.getDefaultCategories();
+                }
+                if (data.links && data.links.length > 0) {
+                    this.links = data.links;
+                } else {
+                    this.links = this.getDefaultLinks();
+                }
+                if (data.settings) {
+                    this.settings = { ...this.settings, ...data.settings };
+                }
+                // 缓存到本地
+                localStorage.setItem('nav_categories', JSON.stringify(this.categories));
+                localStorage.setItem('nav_links', JSON.stringify(this.links));
+                localStorage.setItem('nav_settings', JSON.stringify(this.settings));
+                this.renderCategories();
+                this.renderLinks();
+                this.updateCategorySelects();
+                this.updateSettingsUI();
+            })
+            .catch(err => {
+                console.error('API 加载失败，使用本地数据:', err);
+                // 回退到 localStorage
+                const savedCategories = localStorage.getItem('nav_categories');
+                const savedLinks = localStorage.getItem('nav_links');
+                const savedSettings = localStorage.getItem('nav_settings');
 
-        if (savedCategories) {
-            try {
-                this.categories = JSON.parse(savedCategories);
-            } catch (e) {
-                this.categories = this.getDefaultCategories();
-            }
-        } else {
-            this.categories = this.getDefaultCategories();
-        }
+                if (savedCategories) {
+                    try { this.categories = JSON.parse(savedCategories); } 
+                    catch (e) { this.categories = this.getDefaultCategories(); }
+                } else {
+                    this.categories = this.getDefaultCategories();
+                }
 
-        if (savedLinks) {
-            try {
-                this.links = JSON.parse(savedLinks);
-            } catch (e) {
-                this.links = this.getDefaultLinks();
-            }
-        } else {
-            this.links = this.getDefaultLinks();
-        }
+                if (savedLinks) {
+                    try { this.links = JSON.parse(savedLinks); } 
+                    catch (e) { this.links = this.getDefaultLinks(); }
+                } else {
+                    this.links = this.getDefaultLinks();
+                }
 
-        if (savedSettings) {
-            try {
-                this.settings = { ...this.settings, ...JSON.parse(savedSettings) };
-            } catch (e) {
-                // 使用默认设置
-            }
-        }
+                if (savedSettings) {
+                    try { this.settings = { ...this.settings, ...JSON.parse(savedSettings) }; } 
+                    catch (e) {}
+                }
+
+                this.renderCategories();
+                this.renderLinks();
+                this.updateCategorySelects();
+                this.updateSettingsUI();
+            });
     }
 
+    // ========== 保存数据到 Cloudflare Workers API ==========
     saveData() {
-        // 验证数据完整性
         if (!this.categories || !this.links || !this.settings) {
             console.error('数据不完整，无法保存');
             this.showToast('保存失败：数据不完整');
             return;
         }
-        
+
+        const payload = {
+            password: ADMIN_PASSWORD,
+            categories: this.categories,
+            links: this.links,
+            settings: this.settings
+        };
+
         // 备份旧数据
         const oldCategories = localStorage.getItem('nav_categories');
         const oldLinks = localStorage.getItem('nav_links');
         const oldSettings = localStorage.getItem('nav_settings');
-        
-        try {
+
+        fetch(`${API_URL}/api/data`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                // API 保存成功，同时更新 localStorage 作为本地缓存
+                localStorage.setItem('nav_categories', JSON.stringify(this.categories));
+                localStorage.setItem('nav_links', JSON.stringify(this.links));
+                localStorage.setItem('nav_settings', JSON.stringify(this.settings));
+                localStorage.setItem('nav_sync', Date.now().toString());
+                console.log('数据已同步到 Cloudflare KV');
+            } else {
+                console.error('API 返回错误:', data);
+                this.showToast('保存失败: ' + (data.error || '未知错误'));
+                // 恢复备份
+                if (oldCategories) localStorage.setItem('nav_categories', oldCategories);
+                if (oldLinks) localStorage.setItem('nav_links', oldLinks);
+                if (oldSettings) localStorage.setItem('nav_settings', oldSettings);
+            }
+        })
+        .catch(err => {
+            console.error('API 保存失败:', err);
+            // 网络失败时只保存到 localStorage
             localStorage.setItem('nav_categories', JSON.stringify(this.categories));
             localStorage.setItem('nav_links', JSON.stringify(this.links));
             localStorage.setItem('nav_settings', JSON.stringify(this.settings));
-            
-            // 触发前台页面更新
             localStorage.setItem('nav_sync', Date.now().toString());
-            
-            console.log('数据保存成功');
-        } catch (e) {
-            console.error('保存数据失败，恢复备份:', e);
-            // 恢复备份数据
-            if (oldCategories) localStorage.setItem('nav_categories', oldCategories);
-            if (oldLinks) localStorage.setItem('nav_links', oldLinks);
-            if (oldSettings) localStorage.setItem('nav_settings', oldSettings);
-            this.showToast('保存失败，已恢复之前的数据');
-        }
+            this.showToast('网络异常，已保存到本地缓存');
+        });
     }
 
     resetBgPreview() {
@@ -190,7 +245,6 @@ class AdminApp {
 
     getDefaultLinks() {
         return [
-            // 嫖之呼吸
             { id: '1', categoryId: '1', name: '炫猿', url: 'http://xydh.fun', order: 0 },
             { id: '2', categoryId: '1', name: 'YouTube', url: 'https://www.youtube.com/', order: 1 },
             { id: '3', categoryId: '1', name: '小鸡词典', url: 'https://jikipedia.com/', order: 2 },
@@ -199,7 +253,6 @@ class AdminApp {
             { id: '6', categoryId: '1', name: '孟坤工具箱', url: 'http://lab.mkblog.cn/', order: 5 },
             { id: '7', categoryId: '1', name: '伸手党克星', url: 'https://btfy.eu.org/', order: 6 },
             { id: '8', categoryId: '1', name: 'Yandex', url: 'https://yandex.com/', order: 7 },
-            // 嫖之呼吸-动漫
             { id: '9', categoryId: '2', name: 'AGE动漫', url: 'https://www.agedm.io/', order: 0 },
             { id: '10', categoryId: '2', name: '打驴动漫', url: 'https://www.dalvdm.cc/', order: 1 },
             { id: '11', categoryId: '2', name: '嘀哩嘀哩', url: 'https://www.dilidili23.com/', order: 2 },
@@ -213,7 +266,6 @@ class AdminApp {
             { id: '19', categoryId: '2', name: '动漫花园', url: 'https://animes.garden/', order: 10 },
             { id: '20', categoryId: '2', name: '4K动漫', url: 'https://cn.agekkkk.com/', order: 11 },
             { id: '21', categoryId: '2', name: '嗷呜动漫', url: 'https://www.aowu.tv/', order: 12 },
-            // 嫖之呼吸-电影
             { id: '22', categoryId: '3', name: '七味', url: 'https://www.pkavi.com/', order: 0 },
             { id: '23', categoryId: '3', name: '欧豹影院', url: 'https://www.obzhi.com/', order: 1 },
             { id: '24', categoryId: '3', name: 'LIBVIO', url: 'https://www.libvio.app/', order: 2 },
@@ -228,7 +280,6 @@ class AdminApp {
             { id: '33', categoryId: '3', name: '茶杯狐', url: 'https://www.acupfox.com/', order: 11 },
             { id: '34', categoryId: '3', name: '完整剧名', url: 'https://quarksoo.cc/search.php', order: 12 },
             { id: '35', categoryId: '3', name: '盘链', url: 'https://pinglian.lol/index.php', order: 13 },
-            // 嫖之呼吸-壁纸
             { id: '36', categoryId: '4', name: '极简壁纸', url: 'https://bz.zzzmh.cn/', order: 0 },
             { id: '37', categoryId: '4', name: '搜图导航', url: 'https://www.91sotu.com/', order: 1 },
             { id: '38', categoryId: '4', name: '画师通', url: 'https://www.huashi6.com/', order: 2 },
@@ -237,7 +288,6 @@ class AdminApp {
             { id: '41', categoryId: '4', name: 'Yuumei', url: 'https://www.yuumeiart.com/', order: 5 },
             { id: '42', categoryId: '4', name: 'MyLive', url: 'https://mylivewallpapers.com/', order: 6 },
             { id: '43', categoryId: '4', name: '4K壁纸', url: 'https://haowallpaper.com/homeView', order: 7 },
-            // 嫖之呼吸-游戏
             { id: '44', categoryId: '5', name: '吾爱破解', url: 'https://www.52pojie.cn/', order: 0 },
             { id: '45', categoryId: '5', name: '刀网', url: 'https://www.x6d.com/', order: 1 },
             { id: '46', categoryId: '5', name: 'switch游戏下载', url: 'https://www.gamer520.com/', order: 2 },
@@ -250,7 +300,6 @@ class AdminApp {
             { id: '53', categoryId: '5', name: 'BT之家', url: 'https://www.1lou.me/', order: 9 },
             { id: '54', categoryId: '5', name: '游戏分享社区', url: 'https://www.gameshare.cc/', order: 10 },
             { id: '55', categoryId: '5', name: 'All Games', url: 'https://ankergames.net/games-list', order: 11 },
-            // 常用办公
             { id: '56', categoryId: '6', name: '文件格式转换', url: 'https://www.aconvert.com/', order: 0 },
             { id: '57', categoryId: '6', name: 'iKuuu', url: 'https://ikuuu.win/auth/login', order: 1 },
             { id: '58', categoryId: '6', name: '软仓', url: 'https://www.ruancang.net/', order: 2 },
@@ -264,7 +313,6 @@ class AdminApp {
             { id: '66', categoryId: '6', name: 'AI配音', url: 'https://acgn.ttson.cn/', order: 10 },
             { id: '67', categoryId: '6', name: '微信网页版', url: 'https://szfilehelper.weixin.qq.com/', order: 11 },
             { id: '68', categoryId: '6', name: '图床', url: 'https://imgloc.com/', order: 12 },
-            // 白嫖通道
             { id: '69', categoryId: '7', name: 'MyFreeMP3', url: 'http://tool.liumingye.cn/music/', order: 0 },
             { id: '70', categoryId: '7', name: '折飞机大全', url: 'https://www.foldnfly.com/#/1-1-1-1-1-1-1-1-2', order: 1 },
             { id: '71', categoryId: '7', name: '果核剥壳', url: 'https://www.ghpym.com/', order: 2 },
@@ -280,7 +328,6 @@ class AdminApp {
             { id: '81', categoryId: '7', name: 'ScriptCat', url: 'https://scriptcat.org/zh-CN/search', order: 12 },
             { id: '82', categoryId: '7', name: '软件社', url: 'https://www.sncys.com/', order: 13 },
             { id: '83', categoryId: '7', name: '克隆窝', url: 'https://www.uy5.net/', order: 14 },
-            // 模板下载
             { id: '84', categoryId: '8', name: '简历模板', url: 'https://www.51386.com/', order: 0 },
             { id: '85', categoryId: '8', name: '模之屋', url: 'https://www.aplaybox.com/', order: 1 },
             { id: '86', categoryId: '8', name: '优品PPT', url: 'https://www.ypppt.com/', order: 2 },
@@ -289,7 +336,6 @@ class AdminApp {
             { id: '89', categoryId: '8', name: '51PPT', url: 'https://www.51pptmoban.com/', order: 5 },
             { id: '90', categoryId: '8', name: 'PPTfans', url: 'https://www.pptfans.cn/', order: 6 },
             { id: '91', categoryId: '8', name: '起兮抠图', url: 'http://matting.deeplor.com/', order: 7 },
-            // AI领头羊
             { id: '92', categoryId: '9', name: 'AIchatOS', url: 'https://chat18.aichatos.xyz/', order: 0 },
             { id: '93', categoryId: '9', name: '深度AI导航', url: 'https://www.deepdhai.com/', order: 1 },
             { id: '94', categoryId: '9', name: '文心一言', url: 'https://yiyan.baidu.com/', order: 2 },
@@ -304,7 +350,6 @@ class AdminApp {
             { id: '103', categoryId: '9', name: '最伟大的AI', url: 'https://flo.ing/blank', order: 11 },
             { id: '104', categoryId: '9', name: 'LMArena', url: 'https://lmarena.ai/', order: 12 },
             { id: '105', categoryId: '9', name: 'Gemini', url: 'https://aistudio.google.com/', order: 13 },
-            // 私人专用
             { id: '106', categoryId: '10', name: 'ALL', url: 'https://theporndude.vip/', order: 0 },
             { id: '107', categoryId: '10', name: '百合大法', url: 'https://yuriimg.com/', order: 1 },
             { id: '108', categoryId: '10', name: 'ASMR Online', url: 'https://asmr.one/works', order: 2 },
@@ -317,7 +362,6 @@ class AdminApp {
             { id: '115', categoryId: '10', name: 'Artists', url: 'https://coomer.su/artists', order: 9 },
             { id: '116', categoryId: '10', name: '四色', url: 'http://www.55nana.com', order: 10 },
             { id: '117', categoryId: '10', name: 'sex论坛', url: 'https://169bt.com/forum.php', order: 11 },
-            // 其他导航
             { id: '118', categoryId: '11', name: '萌站', url: 'http://moe321.com/', order: 0 },
             { id: '119', categoryId: '11', name: 'FOREVER', url: 'https://xydh.fun/wxcs0407forever', order: 1 },
             { id: '120', categoryId: '11', name: '52111', url: 'https://xydh.fun/swsyyds', order: 2 },
@@ -332,7 +376,6 @@ class AdminApp {
             { id: '129', categoryId: '11', name: '爱达杂货铺', url: 'https://adzhp.cc/', order: 11 },
             { id: '130', categoryId: '11', name: '零度博客', url: 'https://www.freedidi.com/', order: 12 },
             { id: '131', categoryId: '11', name: '开发者导航', url: 'https://codernav.com/', order: 13 },
-            // 有趣
             { id: '132', categoryId: '12', name: '逗比表情包', url: 'https://www.dbbqb.com/', order: 0 },
             { id: '133', categoryId: '12', name: '有趣网址之家', url: 'https://youquhome.com/', order: 1 },
             { id: '134', categoryId: '12', name: '听雨声', url: 'https://www.rainymood.com/', order: 2 },
@@ -342,7 +385,6 @@ class AdminApp {
             { id: '138', categoryId: '12', name: 'DiskGirl', url: 'https://diskgirl.com/pc.html', order: 6 },
             { id: '139', categoryId: '12', name: '童年模拟器', url: 'https://lemonjing.com/childhood/', order: 7 },
             { id: '140', categoryId: '12', name: '奇趣收藏', url: 'https://fuun.fun/', order: 8 },
-            // 各站合集
             { id: '141', categoryId: '13', name: 'A站', url: 'https://www.acfun.cn/', order: 0 },
             { id: '142', categoryId: '13', name: 'B站', url: 'https://www.bilibili.com/', order: 1 },
             { id: '143', categoryId: '13', name: 'C站', url: 'https://www.clicli.cc/', order: 2 },
@@ -359,30 +401,23 @@ class AdminApp {
     }
 
     bindEvents() {
-        // 顶部导航
         document.querySelectorAll('.nav-item').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const targetBtn = e.target.closest('.nav-item');
                 if (!targetBtn) return;
-                
                 document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
                 targetBtn.classList.add('active');
-                
                 document.querySelectorAll('.panel-section').forEach(s => s.style.display = 'none');
                 const sectionId = targetBtn.dataset.section + 'Section';
                 const section = document.getElementById(sectionId);
-                if (section) {
-                    section.style.display = 'block';
-                }
+                if (section) section.style.display = 'block';
             });
         });
 
-        // 返回首页
         document.getElementById('backBtn').addEventListener('click', () => {
             window.location.href = 'index.html';
         });
 
-        // 预览前台
         document.getElementById('previewBtn').addEventListener('click', () => {
             window.open('index.html', '_blank');
         });
@@ -392,12 +427,10 @@ class AdminApp {
             window.location.href = 'login.html?redirect=admin';
         });
 
-        // 快捷添加链接
         document.getElementById('quickAddBtn').addEventListener('click', () => {
             this.quickAddLink();
         });
 
-        // 添加分类
         document.getElementById('addCategoryBtn').addEventListener('click', () => {
             this.editingCategory = null;
             document.getElementById('categoryModalTitle').textContent = '添加分类';
@@ -406,12 +439,10 @@ class AdminApp {
             this.openModal('categoryModal');
         });
 
-        // 保存分类
         document.getElementById('categoryModalSave').addEventListener('click', () => {
             this.saveCategory();
         });
 
-        // 关闭分类弹窗
         document.getElementById('categoryModalClose').addEventListener('click', () => {
             this.closeModal('categoryModal');
         });
@@ -420,12 +451,10 @@ class AdminApp {
             this.closeModal('categoryModal');
         });
 
-        // 保存链接
         document.getElementById('linkModalSave').addEventListener('click', () => {
             this.saveLink();
         });
 
-        // 关闭链接弹窗
         document.getElementById('linkModalClose').addEventListener('click', () => {
             this.closeModal('linkModal');
         });
@@ -434,7 +463,6 @@ class AdminApp {
             this.closeModal('linkModal');
         });
 
-        // 确认删除
         document.getElementById('confirmDelete').addEventListener('click', () => {
             if (this.deleteCallback) {
                 this.deleteCallback();
@@ -450,23 +478,19 @@ class AdminApp {
             this.closeModal('confirmModal');
         });
 
-        // 预览背景图片（URL）
         document.getElementById('previewBgBtn').addEventListener('click', () => {
             const bgUrl = document.getElementById('bgImageUrl').value.trim();
             if (!bgUrl) {
                 this.showToast('请输入图片链接');
                 return;
             }
-            
             this.previewImage(bgUrl);
         });
 
-        // 本地图片选择
         document.getElementById('localBgImage').addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (!file) return;
             
-            // 文件格式验证
             const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/bmp'];
             if (!allowedTypes.includes(file.type)) {
                 this.showToast('不支持的图片格式，请选择 JPG、PNG、WEBP、GIF 或 BMP 格式');
@@ -474,7 +498,6 @@ class AdminApp {
                 return;
             }
             
-            // 文件大小限制（5MB）
             const maxSize = 5 * 1024 * 1024;
             if (file.size > maxSize) {
                 this.showToast(`图片大小超过限制（最大 5MB），当前文件大小：${this.formatFileSize(file.size)}`);
@@ -482,7 +505,6 @@ class AdminApp {
                 return;
             }
             
-            // 读取并预览图片
             const reader = new FileReader();
             reader.onload = (event) => {
                 const previewContainer = document.getElementById('bgPreviewContainer');
@@ -493,7 +515,6 @@ class AdminApp {
                 img.src = event.target.result;
                 img.onload = () => {
                     previewContainer.classList.add('has-image');
-                    // 显示图片信息
                     const info = document.createElement('div');
                     info.className = 'preview-info';
                     info.textContent = `${file.name} · ${this.formatFileSize(file.size)}`;
@@ -513,7 +534,6 @@ class AdminApp {
                 };
                 
                 previewContainer.appendChild(img);
-                // 清空URL输入，避免冲突
                 document.getElementById('bgImageUrl').value = '';
             };
             
@@ -525,7 +545,6 @@ class AdminApp {
             reader.readAsDataURL(file);
         });
 
-        // 应用背景图片
         document.getElementById('applyBgBtn').addEventListener('click', () => {
             const bgUrl = document.getElementById('bgImageUrl').value.trim();
             const previewContainer = document.getElementById('bgPreviewContainer');
@@ -533,7 +552,6 @@ class AdminApp {
             
             let imageData = bgUrl;
             
-            // 如果没有URL但有预览图片（本地图片）
             if (!bgUrl && previewImg && previewImg.src.startsWith('data:')) {
                 imageData = previewImg.src;
             }
@@ -543,7 +561,6 @@ class AdminApp {
                 return;
             }
             
-            // 验证URL格式（如果是在线URL）
             if (!imageData.startsWith('data:')) {
                 try {
                     new URL(imageData);
@@ -559,7 +576,6 @@ class AdminApp {
             this.showToast('背景图片已应用');
         });
 
-        // 清除背景
         document.getElementById('clearBgBtn').addEventListener('click', () => {
             this.settings.backgroundStyle = 'gradient1';
             this.settings.backgroundImage = '';
@@ -570,13 +586,11 @@ class AdminApp {
             this.showToast('背景已恢复为默认');
         });
 
-        // 重置背景预览
         document.getElementById('bgImageUrl').addEventListener('input', () => {
             document.getElementById('localBgImage').value = '';
             this.resetBgPreview();
         });
 
-        // 字体大小选择
         document.querySelectorAll('.font-option').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 document.querySelectorAll('.font-option').forEach(b => b.classList.remove('active'));
@@ -585,7 +599,6 @@ class AdminApp {
             });
         });
 
-        // 布局样式选择
         document.querySelectorAll('.layout-option').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 document.querySelectorAll('.layout-option').forEach(b => b.classList.remove('active'));
@@ -594,12 +607,10 @@ class AdminApp {
             });
         });
 
-        // 保存设置
         document.getElementById('saveSettings').addEventListener('click', () => {
             this.settings.siteTitle = document.getElementById('siteTitle').value || '导航中心';
             const bgUrl = document.getElementById('bgImageUrl').value;
             this.settings.backgroundImage = bgUrl;
-            // 关键修复：当设置了背景图片URL时，自动设置为自定义模式
             if (bgUrl && bgUrl.trim()) {
                 this.settings.backgroundStyle = 'custom';
             }
@@ -607,9 +618,7 @@ class AdminApp {
             this.showToast('设置已保存');
         });
 
-        // 重置设置
         document.getElementById('resetSettings').addEventListener('click', () => {
-            // 只重置分类和链接，保留现有设置
             this.categories = this.getDefaultCategories();
             this.links = this.getDefaultLinks();
             this.saveData();
@@ -620,12 +629,10 @@ class AdminApp {
             return;
         });
 
-        // 导出配置
         document.getElementById('exportBtn').addEventListener('click', () => {
             this.exportData();
         });
 
-        // 导入配置
         document.getElementById('importBtn').addEventListener('click', () => {
             document.getElementById('importFile').click();
         });
@@ -634,17 +641,14 @@ class AdminApp {
             this.importData(e.target.files[0]);
         });
 
-        // 链接搜索过滤
         document.getElementById('linkSearch').addEventListener('input', () => {
             this.renderLinks();
         });
 
-        // 链接分类过滤
         document.getElementById('linkFilterCategory').addEventListener('change', () => {
             this.renderLinks();
         });
 
-        // 点击遮罩关闭弹窗
         document.querySelectorAll('.modal-overlay').forEach(overlay => {
             overlay.addEventListener('click', (e) => {
                 if (e.target === overlay) {
@@ -653,14 +657,12 @@ class AdminApp {
             });
         });
 
-        // ESC键关闭弹窗
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
                 this.closeAllModals();
             }
         });
 
-        // 拖拽排序
         this.setupDragSort();
     }
 
@@ -962,7 +964,6 @@ class AdminApp {
         this.saveData();
         this.renderLinks();
 
-        // 清空输入
         document.getElementById('quickName').value = '';
         document.getElementById('quickUrl').value = '';
         document.getElementById('quickCategory').value = '';
@@ -1030,20 +1031,15 @@ class AdminApp {
     }
 
     updateSettingsUI() {
-        // 更新字体选择
         document.querySelectorAll('.font-option').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.size === this.settings.fontSize);
         });
 
-        // 更新布局选择
         document.querySelectorAll('.layout-option').forEach(btn => {
             btn.classList.toggle('active', btn.dataset.layout === this.settings.layout);
         });
 
-        // 更新首页标题
         document.getElementById('siteTitle').value = this.settings.siteTitle || '导航中心';
-
-        // 更新背景图片URL
         document.getElementById('bgImageUrl').value = this.settings.backgroundImage || '';
     }
 
