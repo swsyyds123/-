@@ -5,6 +5,7 @@ const API_URL = 'https://nav-api.2798402860.workers.dev';
 
 class NavigationApp {
     constructor() {
+        this.lastCloudTime = 0;
         this.categories = [];
         this.links = [];
         this.settings = {
@@ -112,35 +113,37 @@ class NavigationApp {
         }, 30000);
     }
 
-    async syncFromCloud() {
-        try {
-            const response = await fetch(`${API_URL}/api/data`, {
-                method: 'GET',
-                headers: { 'Content-Type': 'application/json' }
-            });
+async syncFromCloud() {
+    try {
+        const response = await fetch(`${API_URL}/api/data`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' }
+        });
 
-            if (!response.ok) return;
+        if (!response.ok) return;
 
-            const data = await response.json();
-            if (!data || !data.categories) return;
+        const data = await response.json();
+        if (!data || !data.categories) return;
 
-            // 通过 updatedAt 判断是否有更新
-            const cloudTime = data.updatedAt || 0;
-            const localTime = parseInt(localStorage.getItem('nav_sync') || '0');
+        // 通过 updatedAt 判断是否有更新
+        const cloudTime = data.updatedAt || 0;
+        const localTime = parseInt(localStorage.getItem('nav_sync') || '0');
 
-            if (cloudTime > localTime) {
-                this.categories = data.categories;
-                this.links = data.links;
-                this.settings = { ...this.settings, ...(data.settings || {}) };
-                this.cacheToLocal();
-                this.applySettings();
-                this.render();
-                console.log('[Nav] 检测到云端更新，已自动同步');
-            }
-        } catch (err) {
-            // 静默失败，不影响用户
+        // 关键修复：只有云端数据真正比本地新，且内容有变化时才更新
+        if (cloudTime > localTime && cloudTime !== this.lastCloudTime) {
+            this.lastCloudTime = cloudTime;  // 记录这次同步的时间戳
+            this.categories = data.categories;
+            this.links = data.links;
+            this.settings = { ...this.settings, ...(data.settings || {}) };
+            this.cacheToLocal();
+            this.applySettings();
+            this.render();
+            console.log('[Nav] 检测到云端更新，已自动同步');
         }
+    } catch (err) {
+        // 静默失败
     }
+}
 
     stopCloudSync() {
         if (this.syncTimer) {
