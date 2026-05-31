@@ -1,19 +1,45 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8"><title>登录 - 导航页管理</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 - 导航页管理</title>
     <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
 <body>
     <div class="auth-page">
-        <div class="auth-card">
-            <h1>管理员登录</h1>
-            <form id="loginForm">
-                <input type="text" id="username" placeholder="用户名" required style="width:100%;padding:10px;margin:10px 0;">
-                <input type="password" id="password" placeholder="密码" required style="width:100%;padding:10px;margin:10px 0;">
-                <button type="submit" class="btn btn-primary w-full">登录</button>
-            </form>
+        <div class="auth-container">
+            <div class="auth-card">
+                <div class="auth-header">
+                    <div class="auth-logo"><i class="fas fa-compass"></i></div>
+                    <h1>管理员登录</h1>
+                    <p>请输入您的管理账号以同步云端数据</p>
+                </div>
+                <form class="auth-form" id="loginForm">
+                    <div class="form-group">
+                        <label>用户名</label>
+                        <div class="input-wrapper">
+                            <i class="fas fa-user"></i>
+                            <input type="text" id="username" placeholder="请输入用户名" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>密码</label>
+                        <div class="input-wrapper">
+                            <i class="fas fa-lock"></i>
+                            <input type="password" id="password" placeholder="请输入密码" required>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-full">
+                        <i class="fas fa-sign-in-alt"></i> 登录后台
+                    </button>
+                </form>
+            </div>
+            <div class="auth-links">
+                <a href="index.html" class="back-link"><i class="fas fa-home"></i> 返回首页</a>
+            </div>
         </div>
     </div>
     <script>
@@ -21,17 +47,16 @@
             e.preventDefault();
             const u = document.getElementById('username').value.trim();
             const p = document.getElementById('password').value;
-            // 直接在这里校验你设置的账号密码
+            // 校验账号密码
             if (u === "admin" && p === "123..sws..716") {
                 localStorage.setItem('currentUser', JSON.stringify({
                     username: u,
-                    password: p, // 关键：存入密码供后台使用
-                    expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000
+                    password: p,
+                    expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000 // 30天免登
                 }));
-                alert('登录成功！');
                 window.location.href = 'admin.html';
             } else {
-                alert('账号或密码不正确！');
+                alert('账号或密码错误！');
             }
         });
     </script>
