@@ -10,8 +10,7 @@ class NavigationApp {
 
     async init() {
         await this.loadData();
-        const adminBtn = document.getElementById('adminBtn');
-        if (adminBtn) adminBtn.onclick = () => window.location.href = 'admin.html';
+        document.getElementById('adminBtn').onclick = () => window.location.href = 'admin.html';
     }
 
     async loadData() {
