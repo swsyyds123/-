@@ -1,274 +1,128 @@
-const API_URL = 'https://api.swsong.ccwu.cc';
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>后台管理 - 导航页</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="admin-page">
+    <header class="admin-header">
+        <div class="admin-header-content">
+            <div class="logo"><span>导航页管理</span></div>
+            <nav class="admin-top-nav">
+                <button class="nav-item active" data-section="categories"><i class="fas fa-folder"></i> 分类管理</button>
+                <button class="nav-item" data-section="links"><i class="fas fa-link"></i> 链接管理</button>
+                <button class="nav-item" data-section="settings"><i class="fas fa-cog"></i> 个性化设置</button>
+            </nav>
+            <div class="header-actions">
+                <button class="btn btn-secondary" onclick="window.open('index.html')"><i class="fas fa-eye"></i> 预览前台</button>
+                <button class="btn btn-primary" onclick="location.href='index.html'"><i class="fas fa-home"></i> 返回首页</button>
+                <button class="btn btn-danger" id="logoutBtn"><i class="fas fa-sign-out-alt"></i> 退出</button>
+            </div>
+        </div>
+    </header>
 
-class AdminApp {
-    constructor() {
-        const savedUser = localStorage.getItem('currentUser');
-        if (!savedUser) { window.location.replace('login.html'); return; }
-        const user = JSON.parse(savedUser);
-        this.adminPassword = user.password;
-
-        this.categories = [];
-        this.links = [];
-        this.settings = {};
-        
-        this.editingCategoryId = null;
-        this.editingLinkId = null;
-
-        this.init();
-    }
-
-    async init() {
-        await this.loadData();
-        this.bindEvents();
-        this.setupDragSort();
-    }
-
-    async loadData() {
-        try {
-            const res = await fetch(`${API_URL}/api/data`);
-            const data = await res.json();
-            if (data) {
-                this.categories = data.categories || [];
-                this.links = data.links || [];
-                this.settings = data.settings || { siteTitle: '导航中心', fontSize: 'medium' };
-                this.refreshUI();
-            }
-        } catch (e) { alert("加载数据失败，请检查API地址"); }
-    }
-
-    async syncToCloud() {
-        const payload = {
-            password: this.adminPassword,
-            categories: this.categories,
-            links: this.links,
-            settings: this.settings
-        };
-        try {
-            const res = await fetch(`${API_URL}/api/data`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            const result = await res.json();
-            if (result.success) {
-                this.showToast("云端同步成功！");
-                localStorage.setItem('nav_sync', Date.now().toString());
-            } else { alert("同步失败：" + result.error); }
-        } catch (e) { alert("同步出错"); }
-    }
-
-    refreshUI() {
-        this.renderCategories();
-        this.renderLinks();
-        this.updateCategorySelects();
-        document.getElementById('siteTitle').value = this.settings.siteTitle;
-        if (this.settings.backgroundImage) {
-            this.previewImage(this.settings.backgroundImage);
-        }
-    }
-
-    // --- 分类渲染与编辑 ---
-    renderCategories() {
-        const container = document.getElementById('categoriesList');
-        this.categories.sort((a, b) => (a.order || 0) - (b.order || 0));
-        container.innerHTML = this.categories.map(c => `
-            <div class="list-item" draggable="true" data-id="${c.id}">
-                <div class="list-item-info">
-                    <i class="fas fa-grip-vertical" style="color:#ccc; margin-right:15px; cursor:move"></i>
-                    <span class="list-item-name">${c.name}</span>
-                </div>
-                <div class="list-item-actions">
-                    <button class="btn-secondary" onclick="app.openEditCategory('${c.id}')"><i class="fas fa-edit"></i></button>
-                    <button class="btn-danger" onclick="app.deleteCategory('${c.id}')"><i class="fas fa-trash"></i></button>
+    <main class="admin-main">
+        <!-- 快捷添加 -->
+        <div class="quick-add-section">
+            <div class="quick-add-container">
+                <div class="quick-add-form">
+                    <div class="form-row">
+                        <div class="form-group flex-1"><label>网站名称</label><input type="text" id="quickName" placeholder="名称"></div>
+                        <div class="form-group flex-1"><label>网站地址</label><input type="url" id="quickUrl" placeholder="https://..."></div>
+                        <div class="form-group"><label>所属分类</label><select id="quickCategory"></select></div>
+                        <button class="btn btn-primary quick-add-btn" id="quickAddBtn"><i class="fas fa-plus"></i> 快速添加</button>
+                    </div>
                 </div>
             </div>
-        `).join('');
-    }
+        </div>
 
-    openEditCategory(id) {
-        const cat = this.categories.find(c => c.id === id);
-        this.editingCategoryId = id;
-        document.getElementById('categoryModalTitle').textContent = "编辑分类";
-        document.getElementById('categoryName').value = cat.name;
-        document.getElementById('categoryModal').classList.add('active');
-    }
+        <div class="admin-content">
+            <div class="admin-panel">
+                <!-- 分类管理 -->
+                <section id="categoriesSection" class="panel-section">
+                    <div class="panel-header">
+                        <div class="panel-title"><h2>分类管理</h2><p>按住左侧图标上下拖拽调整显示顺序</p></div>
+                        <button class="btn btn-primary" id="addCategoryBtn"><i class="fas fa-plus"></i> 添加分类</button>
+                    </div>
+                    <div id="categoriesList" class="list-container sortable"></div>
+                </section>
 
-    // --- 链接渲染与编辑 ---
-    renderLinks() {
-        const container = document.getElementById('linksList');
-        const filterId = document.getElementById('linkFilterCategory').value;
-        const search = document.getElementById('linkSearch').value.toLowerCase();
-        
-        let list = this.links;
-        if (filterId) list = list.filter(l => l.categoryId === filterId);
-        if (search) list = list.filter(l => l.name.toLowerCase().includes(search));
+                <!-- 链接管理 -->
+                <section id="linksSection" class="panel-section" style="display: none;">
+                    <div class="panel-header">
+                        <div class="panel-title"><h2>链接管理</h2></div>
+                        <div class="integrated-search">
+                            <select id="linkFilterCategory"><option value="">全部分类</option></select>
+                            <input type="text" id="linkSearch" placeholder="搜索链接...">
+                        </div>
+                    </div>
+                    <div id="linksList" class="list-container"></div>
+                </section>
 
-        container.innerHTML = list.map(l => `
-            <div class="list-item">
-                <div class="list-item-info">
-                    <span class="list-item-name">${l.name}</span>
-                    <small style="color:#999; margin-left:10px">${l.url}</small>
-                </div>
-                <div class="list-item-actions">
-                    <button class="btn-secondary" onclick="app.openEditLink('${l.id}')"><i class="fas fa-edit"></i></button>
-                    <button class="btn-danger" onclick="app.deleteLink('${l.id}')"><i class="fas fa-trash"></i></button>
-                </div>
+                <!-- 个性化设置 -->
+                <section id="settingsSection" class="panel-section" style="display: none;">
+                    <div class="settings-grid">
+                        <div class="setting-card">
+                            <h3>站点设置</h3>
+                            <div class="form-group"><label>导航标题</label><input type="text" id="siteTitle"></div>
+                        </div>
+                        <div class="setting-card">
+                            <h3>自定义背景</h3>
+                            <div class="form-group"><label>背景图URL</label><input type="text" id="bgImageUrl" placeholder="在线图片链接"></div>
+                            <div class="form-group">
+                                <label>或本地上传</label>
+                                <input type="file" id="localBgImage" accept="image/*" style="display:none">
+                                <button class="btn btn-secondary w-full" onclick="document.getElementById('localBgImage').click()">选择文件</button>
+                            </div>
+                            <div id="bgPreviewContainer" class="bg-preview-container"></div>
+                            <div class="bg-actions">
+                                <button class="btn btn-primary" id="applyBgBtn">应用背景</button>
+                                <button class="btn btn-danger" id="clearBgBtn">清除</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="settings-actions">
+                        <button class="btn btn-primary" id="saveSettingsBtn">保存全局设置</button>
+                    </div>
+                </section>
             </div>
-        `).join('');
-    }
+        </div>
+    </main>
 
-    openEditLink(id) {
-        const link = this.links.find(l => l.id === id);
-        this.editingLinkId = id;
-        document.getElementById('linkName').value = link.name;
-        document.getElementById('linkUrl').value = link.url;
-        document.getElementById('linkCategory').value = link.categoryId;
-        document.getElementById('linkModal').classList.add('active');
-    }
+    <!-- 分类弹窗 -->
+    <div id="categoryModal" class="modal-overlay">
+        <div class="modal-content small-modal">
+            <div class="modal-header"><h2 id="categoryModalTitle">分类</h2><button class="modal-close">×</button></div>
+            <div class="modal-body">
+                <div class="form-group"><label>分类名称</label><input type="text" id="categoryName"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary modal-close">取消</button>
+                <button class="btn btn-primary" id="categoryModalSave">保存</button>
+            </div>
+        </div>
+    </div>
 
-    // --- 拖拽排序核心 ---
-    setupDragSort() {
-        const list = document.getElementById('categoriesList');
-        let draggedItem = null;
+    <!-- 链接弹窗 -->
+    <div id="linkModal" class="modal-overlay">
+        <div class="modal-content small-modal">
+            <div class="modal-header"><h2 id="linkModalTitle">编辑链接</h2><button class="modal-close">×</button></div>
+            <div class="modal-body">
+                <div class="form-group"><label>名称</label><input type="text" id="linkName"></div>
+                <div class="form-group"><label>网址</label><input type="url" id="linkUrl"></div>
+                <div class="form-group"><label>分类</label><select id="linkCategory"></select></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary modal-close">取消</button>
+                <button class="btn btn-primary" id="linkModalSave">保存</button>
+            </div>
+        </div>
+    </div>
 
-        list.addEventListener('dragstart', (e) => { draggedItem = e.target; e.target.style.opacity = '0.4'; });
-        list.addEventListener('dragend', async (e) => { 
-            e.target.style.opacity = '1';
-            const items = [...list.querySelectorAll('.list-item')];
-            items.forEach((item, index) => {
-                const cat = this.categories.find(c => c.id === item.dataset.id);
-                if (cat) cat.order = index;
-            });
-            await this.syncToCloud();
-        });
-        list.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            const afterElement = (container, y) => {
-                const elements = [...container.querySelectorAll('.list-item:not(.dragging)')];
-                return elements.reduce((closest, child) => {
-                    const box = child.getBoundingClientRect();
-                    const offset = y - box.top - box.height / 2;
-                    if (offset < 0 && offset > closest.offset) return { offset, element: child };
-                    return closest;
-                }, { offset: Number.NEGATIVE_INFINITY }).element;
-            };
-            const after = afterElement(list, e.clientY);
-            if (!after) list.appendChild(draggedItem); else list.insertBefore(draggedItem, after);
-        });
-    }
-
-    // --- 事件绑定 ---
-    bindEvents() {
-        document.getElementById('logoutBtn').onclick = () => { localStorage.clear(); location.href='login.html'; };
-        
-        // 弹窗通用关闭
-        document.querySelectorAll('.modal-close').forEach(b => b.onclick = () => {
-            document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active'));
-        });
-
-        // 保存分类
-        document.getElementById('categoryModalSave').onclick = async () => {
-            const name = document.getElementById('categoryName').value;
-            if (this.editingCategoryId) {
-                this.categories.find(c => c.id === this.editingCategoryId).name = name;
-            } else {
-                this.categories.push({ id: Date.now().toString(), name, order: this.categories.length });
-            }
-            this.editingCategoryId = null;
-            document.getElementById('categoryModal').classList.remove('active');
-            this.refreshUI(); await this.syncToCloud();
-        };
-
-        // 保存链接
-        document.getElementById('linkModalSave').onclick = async () => {
-            const name = document.getElementById('linkName').value;
-            const url = document.getElementById('linkUrl').value;
-            const catId = document.getElementById('linkCategory').value;
-            if (this.editingLinkId) {
-                const l = this.links.find(link => link.id === this.editingLinkId);
-                l.name = name; l.url = url; l.categoryId = catId;
-            }
-            this.editingLinkId = null;
-            document.getElementById('linkModal').classList.remove('active');
-            this.refreshUI(); await this.syncToCloud();
-        };
-
-        // 背景处理
-        document.getElementById('localBgImage').onchange = (e) => {
-            const file = e.target.files[0];
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-                this.previewImage(ev.target.result);
-                this.settings.backgroundImage = ev.target.result;
-            };
-            reader.readAsDataURL(file);
-        };
-
-        document.getElementById('applyBgBtn').onclick = async () => {
-            const url = document.getElementById('bgImageUrl').value;
-            if (url) this.settings.backgroundImage = url;
-            this.settings.backgroundStyle = 'custom';
-            await this.syncToCloud();
-        };
-
-        document.getElementById('saveSettingsBtn').onclick = async () => {
-            this.settings.siteTitle = document.getElementById('siteTitle').value;
-            await this.syncToCloud();
-        };
-
-        // 快速添加
-        document.getElementById('quickAddBtn').onclick = async () => {
-            const name = document.getElementById('quickName').value;
-            const url = document.getElementById('quickUrl').value;
-            const catId = document.getElementById('quickCategory').value;
-            if (name && url && catId) {
-                this.links.push({ id: Date.now().toString(), name, url, categoryId: catId });
-                this.refreshUI(); await this.syncToCloud();
-                document.getElementById('quickName').value = '';
-                document.getElementById('quickUrl').value = '';
-            }
-        };
-
-        document.getElementById('linkSearch').oninput = () => this.renderLinks();
-        document.getElementById('linkFilterCategory').onchange = () => this.renderLinks();
-        document.getElementById('addCategoryBtn').onclick = () => {
-            this.editingCategoryId = null;
-            document.getElementById('categoryName').value = '';
-            document.getElementById('categoryModal').classList.add('active');
-        };
-    }
-
-    previewImage(src) {
-        const container = document.getElementById('bgPreviewContainer');
-        container.innerHTML = `<img src="${src}" style="max-width:100%; border-radius:8px">`;
-    }
-
-    updateCategorySelects() {
-        const html = this.categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
-        document.getElementById('quickCategory').innerHTML = html;
-        document.getElementById('linkCategory').innerHTML = html;
-        document.getElementById('linkFilterCategory').innerHTML = '<option value="">全部分类</option>' + html;
-    }
-
-    async deleteCategory(id) {
-        if (!confirm("确定删除分类吗？")) return;
-        this.categories = this.categories.filter(c => c.id !== id);
-        this.links = this.links.filter(l => l.categoryId !== id);
-        this.refreshUI(); await this.syncToCloud();
-    }
-
-    async deleteLink(id) {
-        if (!confirm("确定删除链接吗？")) return;
-        this.links = this.links.filter(l => l.id !== id);
-        this.refreshUI(); await this.syncToCloud();
-    }
-
-    showToast(m) {
-        const t = document.createElement('div');
-        t.style.cssText = "position:fixed;bottom:2rem;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.8);color:white;padding:0.6rem 1.2rem;border-radius:8px;z-index:9999";
-        t.textContent = m; document.body.appendChild(t);
-        setTimeout(() => t.remove(), 2000);
-    }
-}
-
-window.app = new AdminApp();
+    <script src="admin.js"></script>
+</body>
+</html>
