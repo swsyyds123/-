@@ -125,8 +125,9 @@ class AdminApp {
     }
 
     // ========== 保存数据到 Cloudflare Workers API ==========
-// admin.js 里的 saveData 函数替换为这个：
+// 在 admin.js 中替换 saveData 函数
 saveData() {
+    // 准备要发送的数据
     const payload = {
         password: ADMIN_PASSWORD,
         categories: this.categories,
@@ -134,7 +135,7 @@ saveData() {
         settings: this.settings
     };
 
-    this.showToast('正在同步到云端...');
+    console.log("准备同步数据到云端...", payload);
 
     fetch(`${API_URL}/api/data`, {
         method: 'POST',
@@ -144,22 +145,18 @@ saveData() {
     .then(res => res.json())
     .then(data => {
         if (data.success) {
-            // 关键：在云端保存成功后，立即更新本地缓存的时间戳
-            // 这样前台 index.html 刷新时才能拿到最新数据
-            localStorage.setItem('nav_categories', JSON.stringify(this.categories));
-            localStorage.setItem('nav_links', JSON.stringify(this.links));
-            localStorage.setItem('nav_settings', JSON.stringify(this.settings));
-            localStorage.setItem('nav_sync', Date.now().toString()); 
-            
-            this.showToast('同步成功！多端数据已更新');
-            console.log('数据已同步到 Cloudflare KV');
+            console.log("云端同步成功！");
+            this.showToast('同步成功！数据已更新至云端数据库');
+            // 标记同步时间戳，让其他设备知道有更新了
+            localStorage.setItem('nav_sync', Date.now().toString());
         } else {
-            this.showToast('保存失败: ' + (data.error || '未知错误'));
+            console.error("同步失败:", data.error);
+            alert('同步失败：' + (data.error || '未知错误'));
         }
     })
     .catch(err => {
-        console.error('API 保存失败:', err);
-        this.showToast('网络异常，保存失败');
+        console.error('网络请求错误:', err);
+        alert('无法连接到 Worker，请检查 admin.js 里的 API_URL 是否正确');
     });
 }
 
