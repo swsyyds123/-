@@ -62,61 +62,60 @@ loadLocalData() {
 
     // ========== 数据加载 ==========
 
-    async loadData() {
-        let loaded = false;
+ async loadData() {
+    console.log('[Nav] 正在从云端拉取最新配置...');
+    
+    // 1. 尝试从云端获取（增加 no-cache 确保拿到的是 KV 里的最新值）
+    try {
+        const response = await fetch(`${API_URL}/api/data`, {
+            method: 'GET',
+            headers: { 'Content-Type': 'application/json' },
+            cache: 'no-cache' // 强制跳过浏览器缓存，直接问服务器要
+        });
 
-        // 1. 优先从 Cloudflare Workers API 加载
-        try {
-            const response = await fetch(`${API_URL}/api/data`, {
-                method: 'GET',
-                headers: { 'Content-Type': 'application/json' }
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                if (data.categories && data.categories.length > 0) {
-                    this.categories = data.categories;
-                    this.links = data.links;
-                    this.settings = { ...this.settings, ...(data.settings || {}) };
-                    
-                    // 缓存到本地，实现离线可用
-                    this.cacheToLocal();
-                    loaded = true;
-                    console.log('[Nav] 已从云端加载数据');
-                }
-            }
-        } catch (err) {
-            console.warn('[Nav] 云端加载失败，使用本地缓存:', err.message);
-        }
-
-        // 2. 回退到 localStorage（离线模式或首次备用）
-        if (!loaded) {
-            const savedCategories = localStorage.getItem('nav_categories');
-            const savedLinks = localStorage.getItem('nav_links');
-            const savedSettings = localStorage.getItem('nav_settings');
-
-            if (savedCategories) {
-                try { this.categories = JSON.parse(savedCategories); } 
-                catch (e) { this.categories = this.getDefaultCategories(); }
-            } else {
-                this.categories = this.getDefaultCategories();
-            }
-
-            if (savedLinks) {
-                try { this.links = JSON.parse(savedLinks); } 
-                catch (e) { this.links = this.getDefaultLinks(); }
-            } else {
-                this.links = this.getDefaultLinks();
-            }
-
-            if (savedSettings) {
-                try { this.settings = { ...this.settings, ...JSON.parse(savedSettings) }; } 
-                catch (e) {}
+        if (response.ok) {
+            const cloudData = await response.json();
+            
+            // 只有当云端确实有分类数据时，才覆盖本地
+            if (cloudData && cloudData.categories && cloudData.categories.length > 0) {
+                this.categories = cloudData.categories;
+                this.links = cloudData.links || [];
+                this.settings = { ...this.settings, ...(cloudData.settings || {}) };
+                
+                // 立即更新本地缓存
+                this.cacheToLocal();
+                console.log('[Nav] 云端同步成功');
+                this.applySettings();
+                this.render(); // 拿到云端数据后立即刷一下界面
+                return; // 成功后直接跳出，不再走后面的逻辑
             }
         }
-
-        this.applySettings();
+    } catch (err) {
+        console.warn('[Nav] 云端连接异常，将尝试本地备份:', err.message);
     }
+
+    // 2. 如果云端挂了或者没数据，才去翻本地箱底
+    const savedCategories = localStorage.getItem('nav_categories');
+    if (savedCategories) {
+        try {
+            this.categories = JSON.parse(savedCategories);
+            this.links = JSON.parse(localStorage.getItem('nav_links')) || [];
+            this.settings = { ...this.settings, ...JSON.parse(localStorage.getItem('nav_settings') || '{}') };
+            console.log('[Nav] 已加载本地缓存数据');
+        } catch (e) {
+            this.categories = this.getDefaultCategories();
+            this.links = this.getDefaultLinks();
+        }
+    } else {
+        // 3. 实在啥都没有（第一次用），用默认的
+        this.categories = this.getDefaultCategories();
+        this.links = this.getDefaultLinks();
+        console.log('[Nav] 使用默认初始数据');
+    }
+
+    this.applySettings();
+    this.render();
+}
 
     cacheToLocal() {
         try {
