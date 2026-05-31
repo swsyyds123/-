@@ -1,332 +1,294 @@
+// 配置区
 const API_URL = 'https://api.swsong.ccwu.cc';
 
-class AdminApp {
-    constructor() {
-        const savedUser = localStorage.getItem('currentUser');
-        if (!savedUser) { window.location.replace('login.html'); return; }
-        const user = JSON.parse(savedUser);
-        this.adminPassword = user.password;
+// 全局状态
+let state = {
+    categories: [],
+    links: [],
+    settings: { siteTitle: '导航中心', fontSize: 'medium', backgroundStyle: 'gradient1', backgroundImage: '' },
+    editingId: null
+};
 
-        this.categories = [];
-        this.links = [];
-        this.settings = { 
-            siteTitle: '导航中心', 
-            fontSize: 'medium', 
-            backgroundStyle: 'gradient1',
-            backgroundImage: '' 
-        };
-        
-        this.editingId = null; // 用于存储正在编辑的 ID
-        this.init();
-    }
+// 获取登录密码
+const getPassword = () => {
+    const user = JSON.parse(localStorage.getItem('currentUser') || '{}');
+    return user.password || '';
+};
 
-    async init() {
-        await this.loadData();
-        this.bindGlobalEvents();
-        this.setupDragAndDrop();
-    }
+// --- 核心：同步到 Cloudflare KV ---
+async function syncToKV() {
+    console.log("正在同步到云端...");
+    const payload = {
+        password: getPassword(),
+        categories: state.categories,
+        links: state.links,
+        settings: state.settings
+    };
 
-    // --- 数据持久化 ---
-    async loadData() {
-        try {
-            const res = await fetch(`${API_URL}/api/data`, { cache: 'no-cache' });
-            const data = await res.json();
-            if (data && data.categories && data.categories.length > 0) {
-                this.categories = data.categories;
-                this.links = data.links || [];
-                this.settings = { ...this.settings, ...data.settings };
-            } else {
-                // 如果云端没数据，加载默认值
-                this.categories = this.getDefaultCategories();
-                this.links = this.getDefaultLinks();
-            }
-            this.refreshUI();
-        } catch (e) {
-            console.error("加载失败，使用本地默认数据");
-            this.categories = this.getDefaultCategories();
-            this.links = this.getDefaultLinks();
-            this.refreshUI();
+    try {
+        const res = await fetch(`${API_URL}/api/data`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const result = await res.json();
+        if (result.success) {
+            showToast("云端 KV 同步成功！");
+        } else {
+            alert("同步失败：" + result.error);
         }
+    } catch (e) {
+        alert("网络错误，无法连接到 Cloudflare Worker");
     }
+}
 
-    async sync() {
-        const payload = {
-            password: this.adminPassword,
-            categories: this.categories,
-            links: this.links,
-            settings: this.settings
-        };
-        try {
-            const res = await fetch(`${API_URL}/api/data`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            const result = await res.json();
-            if (result.success) {
-                this.showToast("同步成功");
-            } else { alert("同步失败: " + result.error); }
-        } catch (e) { alert("云端连接断开"); }
-    }
-
-    refreshUI() {
-        this.renderCategories();
-        this.renderLinks();
-        this.updateCategorySelects();
-        this.renderSettings();
-    }
-
-    // --- 分类管理 ---
-    renderCategories() {
-        const container = document.getElementById('categoriesList');
-        this.categories.sort((a, b) => (a.order || 0) - (b.order || 0));
-        container.innerHTML = this.categories.map(c => `
-            <div class="list-item" draggable="true" data-id="${c.id}">
-                <div class="list-item-info">
-                    <i class="fas fa-grip-vertical" style="cursor:move; color:#888; margin-right:15px"></i>
-                    <span>${c.name}</span>
-                </div>
-                <div class="list-item-actions">
-                    <button class="btn-secondary" onclick="app.openEditCategory('${c.id}')"><i class="fas fa-edit"></i></button>
-                    <button class="btn-danger" onclick="app.deleteCategory('${c.id}')"><i class="fas fa-trash"></i></button>
-                </div>
-            </div>
-        `).join('');
-    }
-
-    openEditCategory(id) {
-        const cat = this.categories.find(c => c.id === id);
-        this.editingId = id;
-        document.getElementById('categoryModalTitle').textContent = "编辑分类";
-        document.getElementById('categoryName').value = cat.name;
-        document.getElementById('categoryModal').classList.add('active');
-    }
-
-    // --- 链接管理 ---
-    renderLinks() {
-        const container = document.getElementById('linksList');
-        const catId = document.getElementById('linkFilterCategory').value;
-        const kw = document.getElementById('linkSearch').value.toLowerCase();
+// --- 初始化加载 ---
+async function loadData() {
+    try {
+        const res = await fetch(`${API_URL}/api/data`, { cache: 'no-cache' });
+        const data = await res.json();
         
-        let list = this.links;
-        if (catId) list = list.filter(l => l.categoryId === catId);
-        if (kw) list = list.filter(l => l.name.toLowerCase().includes(kw));
+        if (data && data.categories && data.categories.length > 0) {
+            state.categories = data.categories;
+            state.links = data.links || [];
+            state.settings = { ...state.settings, ...data.settings };
+        } else {
+            // 如果云端是空的，加载你的 152 个链接默认值
+            state.categories = getDefaultCategories();
+            state.links = getDefaultLinks();
+            await syncToKV(); // 初始化后自动推送到云端
+        }
+        refreshUI();
+    } catch (e) {
+        console.error("加载云端数据失败，使用内置数据");
+        state.categories = getDefaultCategories();
+        state.links = getDefaultLinks();
+        refreshUI();
+    }
+}
 
-        container.innerHTML = list.map(l => `
-            <div class="list-item">
-                <div class="list-item-info">
-                    <strong>${l.name}</strong>
-                    <span style="font-size:12px; color:#999; margin-left:10px">${l.url}</span>
-                </div>
-                <div class="list-item-actions">
-                    <button class="btn-secondary" onclick="app.openEditLink('${l.id}')"><i class="fas fa-edit"></i></button>
-                    <button class="btn-danger" onclick="app.deleteLink('${l.id}')"><i class="fas fa-trash"></i></button>
-                </div>
+// --- 渲染逻辑 ---
+function refreshUI() {
+    renderCategories();
+    renderLinks();
+    updateSelects();
+    renderSettings();
+}
+
+function renderCategories() {
+    const container = document.getElementById('categoriesList');
+    state.categories.sort((a, b) => (a.order || 0) - (b.order || 0));
+    container.innerHTML = state.categories.map(c => `
+        <div class="list-item" draggable="true" ondragstart="handleDragStart(event)" ondragover="handleDragOver(event)" ondrop="handleDrop(event)" data-id="${c.id}">
+            <div class="list-item-info">
+                <i class="fas fa-grip-vertical" style="color:#888; margin-right:15px"></i>
+                <span>${c.name}</span>
             </div>
-        `).join('');
-    }
+            <div class="list-item-actions">
+                <button class="btn-secondary" onclick="openEditCategory('${c.id}')"><i class="fas fa-edit"></i></button>
+                <button class="btn-danger" onclick="deleteCategory('${c.id}')"><i class="fas fa-trash"></i></button>
+            </div>
+        </div>
+    `).join('');
+}
 
-    openEditLink(id) {
-        const link = this.links.find(l => l.id === id);
-        this.editingId = id;
-        document.getElementById('linkName').value = link.name;
-        document.getElementById('linkUrl').value = link.url;
-        document.getElementById('linkCategory').value = link.categoryId;
-        document.getElementById('linkModal').classList.add('active');
-    }
+function renderLinks() {
+    const container = document.getElementById('linksList');
+    const filterId = document.getElementById('linkFilterCategory').value;
+    const searchKw = document.getElementById('linkSearch').value.toLowerCase();
+    
+    let list = state.links;
+    if (filterId) list = list.filter(l => l.categoryId === filterId);
+    if (searchKw) list = list.filter(l => l.name.toLowerCase().includes(searchKw));
 
-    // --- 拖拽逻辑修复 ---
-    setupDragAndDrop() {
+    container.innerHTML = list.map(l => `
+        <div class="list-item">
+            <div class="list-item-info">
+                <strong>${l.name}</strong>
+                <small style="color:#999; margin-left:10px">${l.url}</small>
+            </div>
+            <div class="list-item-actions">
+                <button class="btn-secondary" onclick="openEditLink('${l.id}')"><i class="fas fa-edit"></i></button>
+                <button class="btn-danger" onclick="deleteLink('${l.id}')"><i class="fas fa-trash"></i></button>
+            </div>
+        </div>
+    `).join('');
+}
+
+// --- 分类操作 ---
+window.openEditCategory = (id) => {
+    const cat = state.categories.find(c => c.id === id);
+    state.editingId = id;
+    document.getElementById('categoryName').value = cat.name;
+    document.getElementById('categoryModal').classList.add('active');
+};
+
+async function saveCategory() {
+    const name = document.getElementById('categoryName').value.trim();
+    if (!name) return;
+
+    if (state.editingId) {
+        state.categories.find(c => c.id === state.editingId).name = name;
+    } else {
+        state.categories.push({ id: Date.now().toString(), name: name, order: state.categories.length });
+    }
+    closeModals();
+    refreshUI();
+    await syncToKV();
+}
+
+// --- 链接操作 ---
+window.openEditLink = (id) => {
+    const link = state.links.find(l => l.id === id);
+    state.editingId = id;
+    document.getElementById('linkName').value = link.name;
+    document.getElementById('linkUrl').value = link.url;
+    document.getElementById('linkCategory').value = link.categoryId;
+    document.getElementById('linkModal').classList.add('active');
+};
+
+async function saveLink() {
+    const name = document.getElementById('linkName').value.trim();
+    const url = document.getElementById('linkUrl').value.trim();
+    const catId = document.getElementById('linkCategory').value;
+
+    if (state.editingId) {
+        const l = state.links.find(l => l.id === state.editingId);
+        l.name = name; l.url = url; l.categoryId = catId;
+    }
+    closeModals();
+    refreshUI();
+    await syncToKV();
+}
+
+// --- 拖拽排序逻辑 ---
+let draggedElement = null;
+window.handleDragStart = (e) => {
+    draggedElement = e.currentTarget;
+    e.dataTransfer.effectAllowed = 'move';
+};
+window.handleDragOver = (e) => { e.preventDefault(); };
+window.handleDrop = async (e) => {
+    e.preventDefault();
+    const target = e.currentTarget;
+    if (target !== draggedElement) {
         const list = document.getElementById('categoriesList');
-        let draggedItem = null;
+        const items = [...list.querySelectorAll('.list-item')];
+        const draggedIdx = items.indexOf(draggedElement);
+        const targetIdx = items.indexOf(target);
+        
+        if (draggedIdx < targetIdx) target.after(draggedElement);
+        else target.before(draggedElement);
 
-        list.addEventListener('dragstart', (e) => {
-            draggedItem = e.target.closest('.list-item');
-            draggedItem.classList.add('dragging');
+        // 重新保存 order 到内存
+        const newItems = [...list.querySelectorAll('.list-item')];
+        newItems.forEach((item, index) => {
+            const id = item.dataset.id;
+            state.categories.find(c => c.id === id).order = index;
         });
-
-        list.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            const afterElement = (container, y) => {
-                const elements = [...container.querySelectorAll('.list-item:not(.dragging)')];
-                return elements.reduce((closest, child) => {
-                    const box = child.getBoundingClientRect();
-                    const offset = y - box.top - box.height / 2;
-                    if (offset < 0 && offset > closest.offset) return { offset, element: child };
-                    return closest;
-                }, { offset: Number.NEGATIVE_INFINITY }).element;
-            };
-            const after = afterElement(list, e.clientY);
-            if (!after) list.appendChild(draggedItem);
-            else list.insertBefore(draggedItem, after);
-        });
-
-        list.addEventListener('drop', async (e) => {
-            e.preventDefault();
-            draggedItem.classList.remove('dragging');
-            // 重新计算顺序
-            const items = [...list.querySelectorAll('.list-item')];
-            items.forEach((item, index) => {
-                const cat = this.categories.find(c => c.id === item.dataset.id);
-                if (cat) cat.order = index;
-            });
-            await this.sync();
-        });
+        await syncToKV();
     }
+};
 
-    // --- 事件绑定 ---
-    bindGlobalEvents() {
-        // 选项卡切换
-        document.querySelectorAll('.nav-item').forEach(btn => {
-            btn.onclick = (e) => {
-                const section = e.currentTarget.dataset.section;
-                document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
-                e.currentTarget.classList.add('active');
-                document.querySelectorAll('.panel-section').forEach(s => s.style.display = 'none');
-                document.getElementById(section + 'Section').style.display = 'block';
-            };
-        });
+// --- 其他事件绑定 ---
+function bindEvents() {
+    // 快速添加
+    document.getElementById('quickAddBtn').onclick = async () => {
+        const name = document.getElementById('quickName').value;
+        const url = document.getElementById('quickUrl').value;
+        const catId = document.getElementById('quickCategory').value;
+        if (name && url && catId) {
+            state.links.push({ id: Date.now().toString(), name, url, categoryId: catId, order: 0 });
+            document.getElementById('quickName').value = '';
+            document.getElementById('quickUrl').value = '';
+            refreshUI(); await syncToKV();
+        }
+    };
 
-        // 弹窗关闭
-        document.querySelectorAll('.modal-close, .modal-footer .btn-secondary').forEach(b => {
-            b.onclick = () => document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active'));
-        });
-
-        // 分类保存
-        document.getElementById('categoryModalSave').onclick = async () => {
-            const name = document.getElementById('categoryName').value.trim();
-            if (!name) return;
-            if (this.editingId) {
-                this.categories.find(c => c.id === this.editingId).name = name;
-            } else {
-                this.categories.push({ id: Date.now().toString(), name, order: this.categories.length });
-            }
-            this.closeModals(); this.refreshUI(); await this.sync();
+    // 选项卡
+    document.querySelectorAll('.nav-item').forEach(btn => {
+        btn.onclick = (e) => {
+            const section = e.currentTarget.dataset.section;
+            document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+            e.currentTarget.classList.add('active');
+            document.querySelectorAll('.panel-section').forEach(s => s.style.display = 'none');
+            document.getElementById(section + 'Section').style.display = 'block';
         };
+    });
 
-        // 链接保存
-        document.getElementById('linkModalSave').onclick = async () => {
-            const name = document.getElementById('linkName').value.trim();
-            const url = document.getElementById('linkUrl').value.trim();
-            const catId = document.getElementById('linkCategory').value;
-            if (this.editingId) {
-                const l = this.links.find(l => l.id === this.editingId);
-                l.name = name; l.url = url; l.categoryId = catId;
-            }
-            this.closeModals(); this.refreshUI(); await this.sync();
+    document.getElementById('addCategoryBtn').onclick = () => {
+        state.editingId = null;
+        document.getElementById('categoryName').value = '';
+        document.getElementById('categoryModal').classList.add('active');
+    };
+
+    document.getElementById('categoryModalSave').onclick = saveCategory;
+    document.getElementById('linkModalSave').onclick = saveLink;
+    document.getElementById('linkSearch').oninput = renderLinks;
+    document.getElementById('linkFilterCategory').onchange = renderLinks;
+    document.getElementById('saveSettings').onclick = async () => {
+        state.settings.siteTitle = document.getElementById('siteTitle').value;
+        await syncToKV();
+    };
+
+    // 背景图上传
+    document.getElementById('localBgImage').onchange = (e) => {
+        const file = e.target.files[0];
+        const reader = new FileReader();
+        reader.onload = async (ev) => {
+            state.settings.backgroundImage = ev.target.result;
+            state.settings.backgroundStyle = 'custom';
+            renderSettings();
+            await syncToKV();
         };
+        reader.readAsDataURL(file);
+    };
 
-        // 快捷添加
-        document.getElementById('quickAddBtn').onclick = async () => {
-            const name = document.getElementById('quickName').value;
-            const url = document.getElementById('quickUrl').value;
-            const catId = document.getElementById('quickCategory').value;
-            if (name && url && catId) {
-                this.links.push({ id: Date.now().toString(), name, url, categoryId: catId, order: 0 });
-                this.refreshUI(); await this.sync();
-                document.getElementById('quickName').value = '';
-                document.getElementById('quickUrl').value = '';
-            }
-        };
+    document.getElementById('logoutBtn').onclick = () => { localStorage.clear(); location.href='login.html'; };
+}
 
-        // 个性化保存
-        document.getElementById('saveSettings').onclick = async () => {
-            this.settings.siteTitle = document.getElementById('siteTitle').value;
-            const bgUrl = document.getElementById('bgImageUrl').value;
-            if(bgUrl) {
-                this.settings.backgroundImage = bgUrl;
-                this.settings.backgroundStyle = 'custom';
-            }
-            await this.sync();
-        };
+// --- 辅助功能 ---
+function closeModals() {
+    document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active'));
+    state.editingId = null;
+}
 
-        // 背景图上传
-        document.getElementById('localBgImage').onchange = (e) => {
-            const file = e.target.files[0];
-            const reader = new FileReader();
-            reader.onload = async (ev) => {
-                this.settings.backgroundImage = ev.target.result;
-                this.settings.backgroundStyle = 'custom';
-                this.previewImage(ev.target.result);
-                await this.sync();
-            };
-            reader.readAsDataURL(file);
-        };
+function updateSelects() {
+    const html = state.categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    document.getElementById('quickCategory').innerHTML = html;
+    document.getElementById('linkCategory').innerHTML = html;
+    document.getElementById('linkFilterCategory').innerHTML = '<option value="">全部分类</option>' + html;
+}
 
-        document.getElementById('clearBgBtn').onclick = async () => {
-            this.settings.backgroundImage = '';
-            this.settings.backgroundStyle = 'gradient1';
-            document.getElementById('bgImageUrl').value = '';
-            document.getElementById('bgPreviewContainer').innerHTML = '';
-            await this.sync();
-        };
-
-        document.getElementById('linkSearch').oninput = () => this.renderLinks();
-        document.getElementById('linkFilterCategory').onchange = () => this.renderLinks();
-        document.getElementById('logoutBtn').onclick = () => { localStorage.clear(); location.href='login.html'; };
-        document.getElementById('addCategoryBtn').onclick = () => {
-            this.editingId = null;
-            document.getElementById('categoryName').value = '';
-            document.getElementById('categoryModal').classList.add('active');
-        };
+function renderSettings() {
+    document.getElementById('siteTitle').value = state.settings.siteTitle || '';
+    const container = document.getElementById('bgPreviewContainer');
+    if (state.settings.backgroundImage) {
+        container.innerHTML = `<img src="${state.settings.backgroundImage}" style="max-height:120px; border-radius:8px">`;
     }
+}
 
-    closeModals() {
-        document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active'));
-        this.editingId = null;
-    }
+function showToast(m) {
+    const t = document.createElement('div');
+    t.style.cssText = "position:fixed;bottom:2rem;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.85);color:white;padding:0.8rem 1.5rem;border-radius:8px;z-index:9999";
+    t.textContent = m; document.body.appendChild(t);
+    setTimeout(() => t.remove(), 2500);
+}
 
-    renderSettings() {
-        document.getElementById('siteTitle').value = this.settings.siteTitle || '';
-        document.getElementById('bgImageUrl').value = (this.settings.backgroundStyle === 'custom' && !this.settings.backgroundImage.startsWith('data:')) ? this.settings.backgroundImage : '';
-        if (this.settings.backgroundImage) this.previewImage(this.settings.backgroundImage);
-    }
+// --- 默认数据 ---
+function getDefaultCategories() {
+    return [
+        { id: '1', name: '嫖之呼吸', order: 0 }, { id: '2', name: '嫖之呼吸-动漫', order: 1 },
+        { id: '3', name: '嫖之呼吸-电影', order: 2 }, { id: '4', name: '嫖之呼吸-壁纸', order: 3 },
+        { id: '5', name: '嫖之呼吸-游戏', order: 4 }, { id: '6', name: '常用办公', order: 5 },
+        { id: '7', name: '白嫖通道', order: 6 }, { id: '8', name: '模板下载', order: 7 },
+        { id: '9', name: 'AI领头羊', order: 8 }, { id: '10', name: '私人专用', order: 9 },
+        { id: '11', name: '其他导航', order: 10 }, { id: '12', name: '有趣', order: 11 }, { id: '13', name: '各站合集', order: 12 }
+    ];
+}
 
-    previewImage(src) {
-        document.getElementById('bgPreviewContainer').innerHTML = `<img src="${src}" style="max-height:150px; border-radius:8px">`;
-    }
-
-    updateCategorySelects() {
-        const html = this.categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
-        document.getElementById('quickCategory').innerHTML = html;
-        document.getElementById('linkCategory').innerHTML = html;
-        document.getElementById('linkFilterCategory').innerHTML = '<option value="">全部分类</option>' + html;
-    }
-
-    async deleteCategory(id) {
-        if (!confirm("确定删除分类吗？")) return;
-        this.categories = this.categories.filter(c => c.id !== id);
-        this.links = this.links.filter(l => l.categoryId !== id);
-        this.refreshUI(); await this.sync();
-    }
-
-    async deleteLink(id) {
-        if (!confirm("确定删除链接吗？")) return;
-        this.links = this.links.filter(l => l.id !== id);
-        this.refreshUI(); await this.sync();
-    }
-
-    showToast(m) {
-        const t = document.createElement('div');
-        t.className = 'toast';
-        t.style.cssText = "position:fixed;bottom:2rem;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.8);color:white;padding:0.6rem 1.2rem;border-radius:8px;z-index:9999";
-        t.textContent = m; document.body.appendChild(t);
-        setTimeout(() => t.remove(), 2000);
-    }
-
-    getDefaultCategories() {
-        return [
-            { id: '1', name: '嫖之呼吸', order: 0 }, { id: '2', name: '嫖之呼吸-动漫', order: 1 },
-            { id: '3', name: '嫖之呼吸-电影', order: 2 }, { id: '4', name: '嫖之呼吸-壁纸', order: 3 },
-            { id: '5', name: '嫖之呼吸-游戏', order: 4 }, { id: '6', name: '常用办公', order: 5 },
-            { id: '7', name: '白嫖通道', order: 6 }, { id: '8', name: '模板下载', order: 7 },
-            { id: '9', name: 'AI领头羊', order: 8 }, { id: '10', name: '私人专用', order: 9 },
-            { id: '11', name: '其他导航', order: 10 }, { id: '12', name: '有趣', order: 11 }, { id: '13', name: '各站合集', order: 12 }
-        ];
-    }
-
-    getDefaultLinks() {
-             // 此处包含你之前发我的所有 152 个链接（篇幅原因，仅展示部分，建议保持此数组完整）
+function getDefaultLinks() {
+        // 此处包含你之前发我的所有 152 个链接（篇幅原因，仅展示部分，建议保持此数组完整）
         return [
             {"id": "1", "categoryId": "1", "name": "炫猿", "url": "http://xydh.fun", "order": 0},
             {"id": "2", "categoryId": "1", "name": "YouTube", "url": "https://www.youtube.com/", "order": 1},
@@ -482,6 +444,9 @@ class AdminApp {
             {"id": "152", "categoryId": "13", "name": "E站", "url": "https://www.ezdmw.site/", "order": 11}
         ];
     }
-}
 
-const app = new AdminApp();
+// 启动
+window.onload = () => {
+    loadData();
+    bindEvents();
+};
