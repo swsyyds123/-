@@ -25,15 +25,40 @@ class NavigationApp {
         this.init();
     }
 
-    async init() {
-        this.showLoading();
-        await this.loadData();
-        this.bindEvents();
-        this.render();
-        this.hideLoading();
-        this.setupSyncListener();
-        this.startCloudSync();
-    }
+async init() {
+    // 1. 先展示加载动画（可选）
+    this.showLoading();
+
+    // 2. 立即从本地缓存加载并渲染，让用户秒开网站
+    this.loadLocalData(); 
+    this.applySettings();
+    this.render();
+    this.hideLoading(); // 渲染完本地的就关掉加载动画
+
+    // 3. 异步从云端获取最新数据，静默更新
+    this.syncFromCloud().then(() => {
+        console.log("云端数据已同步并静默更新");
+    });
+
+    this.bindEvents();
+    this.setupSyncListener();
+    this.startCloudSync();
+}
+
+// 新增一个专门读取本地的方法
+loadLocalData() {
+    const savedCategories = localStorage.getItem('nav_categories');
+    const savedLinks = localStorage.getItem('nav_links');
+    const savedSettings = localStorage.getItem('nav_settings');
+
+    if (savedCategories) this.categories = JSON.parse(savedCategories);
+    else this.categories = this.getDefaultCategories();
+
+    if (savedLinks) this.links = JSON.parse(savedLinks);
+    else this.links = this.getDefaultLinks();
+
+    if (savedSettings) this.settings = { ...this.settings, ...JSON.parse(savedSettings) };
+}
 
     // ========== 数据加载 ==========
 
