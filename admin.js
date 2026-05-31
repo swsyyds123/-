@@ -125,58 +125,43 @@ class AdminApp {
     }
 
     // ========== 保存数据到 Cloudflare Workers API ==========
-    saveData() {
-        if (!this.categories || !this.links || !this.settings) {
-            console.error('数据不完整，无法保存');
-            this.showToast('保存失败：数据不完整');
-            return;
-        }
+// admin.js 里的 saveData 函数替换为这个：
+saveData() {
+    const payload = {
+        password: ADMIN_PASSWORD,
+        categories: this.categories,
+        links: this.links,
+        settings: this.settings
+    };
 
-        const payload = {
-            password: ADMIN_PASSWORD,
-            categories: this.categories,
-            links: this.links,
-            settings: this.settings
-        };
+    this.showToast('正在同步到云端...');
 
-        // 备份旧数据
-        const oldCategories = localStorage.getItem('nav_categories');
-        const oldLinks = localStorage.getItem('nav_links');
-        const oldSettings = localStorage.getItem('nav_settings');
-
-        fetch(`${API_URL}/api/data`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        })
-        .then(res => res.json())
-        .then(data => {
-            if (data.success) {
-                // API 保存成功，同时更新 localStorage 作为本地缓存
-                localStorage.setItem('nav_categories', JSON.stringify(this.categories));
-                localStorage.setItem('nav_links', JSON.stringify(this.links));
-                localStorage.setItem('nav_settings', JSON.stringify(this.settings));
-                localStorage.setItem('nav_sync', Date.now().toString());
-                console.log('数据已同步到 Cloudflare KV');
-            } else {
-                console.error('API 返回错误:', data);
-                this.showToast('保存失败: ' + (data.error || '未知错误'));
-                // 恢复备份
-                if (oldCategories) localStorage.setItem('nav_categories', oldCategories);
-                if (oldLinks) localStorage.setItem('nav_links', oldLinks);
-                if (oldSettings) localStorage.setItem('nav_settings', oldSettings);
-            }
-        })
-        .catch(err => {
-            console.error('API 保存失败:', err);
-            // 网络失败时只保存到 localStorage
+    fetch(`${API_URL}/api/data`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            // 关键：在云端保存成功后，立即更新本地缓存的时间戳
+            // 这样前台 index.html 刷新时才能拿到最新数据
             localStorage.setItem('nav_categories', JSON.stringify(this.categories));
             localStorage.setItem('nav_links', JSON.stringify(this.links));
             localStorage.setItem('nav_settings', JSON.stringify(this.settings));
-            localStorage.setItem('nav_sync', Date.now().toString());
-            this.showToast('网络异常，已保存到本地缓存');
-        });
-    }
+            localStorage.setItem('nav_sync', Date.now().toString()); 
+            
+            this.showToast('同步成功！多端数据已更新');
+            console.log('数据已同步到 Cloudflare KV');
+        } else {
+            this.showToast('保存失败: ' + (data.error || '未知错误'));
+        }
+    })
+    .catch(err => {
+        console.error('API 保存失败:', err);
+        this.showToast('网络异常，保存失败');
+    });
+}
 
     resetBgPreview() {
         const previewContainer = document.getElementById('bgPreviewContainer');
