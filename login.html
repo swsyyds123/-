@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>登录 - 导航页</title>
+    <title>登录 - 导航页管理</title>
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -16,16 +16,16 @@
                     <div class="auth-logo">
                         <i class="fas fa-compass"></i>
                     </div>
-                    <h1>欢迎回来</h1>
-                    <p>请登录您的账户</p>
+                    <h1>管理员登录</h1>
+                    <p>请输入您的管理账号</p>
                 </div>
                 
                 <form class="auth-form" id="loginForm">
                     <div class="form-group">
-                        <label for="username">用户名或邮箱</label>
+                        <label for="username">用户名</label>
                         <div class="input-wrapper">
                             <i class="fas fa-user"></i>
-                            <input type="text" id="username" placeholder="请输入用户名或邮箱" required>
+                            <input type="text" id="username" placeholder="admin" required>
                         </div>
                     </div>
                     
@@ -37,75 +37,52 @@
                         </div>
                     </div>
                     
-                    <div class="form-group form-check">
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="rememberMe">
-                            <span>免登录</span>
-                        </label>
-                    </div>
-
-                    <div class="form-group remember-duration" id="rememberDuration" style="display: none;">
-                        <label class="radio-label">
-                            <input type="radio" name="rememberDays" value="7" checked>
-                            <span>7天内免登录</span>
-                        </label>
-                        <label class="radio-label">
-                            <input type="radio" name="rememberDays" value="30">
-                            <span>30天内免登录</span>
-                        </label>
-                    </div>
-                    
                     <button type="submit" class="btn btn-primary w-full">
-                        <i class="fas fa-sign-in-alt"></i> 登录
+                        <i class="fas fa-sign-in-alt"></i> 登录后台
                     </button>
                 </form>
                 
-                <div class="auth-footer">
-                    <p>
-                        没有账户？<a href="register.html" class="auth-link">立即注册</a>
-                    </p>
-                </div>
+                <!-- 注册按钮和链接已在这里彻底删除 -->
             </div>
             
             <div class="auth-links">
                 <a href="index.html" class="back-link">
                     <i class="fas fa-home"></i> 返回首页
                 </a>
-                <nav class="footer-links auth-footer-links" aria-label="底部导航">
-                    <a href="index.html">首页</a>
-                    <a href="about.html">关于我们</a>
-                    <a href="feedback.html">用户反馈</a>
-                    <a href="admin.html">后台管理</a>
-                </nav>
             </div>
         </div>
     </div>
 
-<script>
-    document.getElementById('loginForm').addEventListener('submit', function(e) {
-        e.preventDefault();
-        
-        const username = document.getElementById('username').value.trim();
-        const password = document.getElementById('password').value;
-        
-        // --- 在这里直接写死你的管理员账号和密码 ---
-        const MY_ADMIN_USER = "admin"; 
-        const MY_ADMIN_PASS = "123..sws..716"; 
-        
-        if (username === MY_ADMIN_USER && password === MY_ADMIN_PASS) {
-            // 登录成功，保存一个永久不过期的凭证
-            localStorage.setItem('currentUser', JSON.stringify({
-                username: username,
-                expiresAt: Date.now() + 999 * 24 * 60 * 60 * 1000 // 999天
-            }));
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', function(e) {
+            e.preventDefault();
             
-            alert('登录成功，欢迎主人回来！');
-            const params = new URLSearchParams(window.location.search);
-            window.location.href = params.get('redirect') === 'admin' ? 'admin.html' : 'index.html';
-        } else {
-            alert('账号或密码错误！非本人禁止操作。');
-        }
-    });
-</script>
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+            
+            // ==========================================
+            // 在这里修改你想要的唯一账号和密码
+            // ==========================================
+            const MY_ADMIN_USER = "admin"; 
+            const MY_ADMIN_PASS = "123..sws..716"; 
+            
+            if (username === MY_ADMIN_USER && password === MY_ADMIN_PASS) {
+                // 登录成功，保存登录凭证
+                // admin.js 会检查 localStorage 里的 currentUser 和 expiresAt
+                localStorage.setItem('currentUser', JSON.stringify({
+                    username: username,
+                    loginTime: Date.now(),
+                    expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000 // 30天有效期
+                }));
+                
+                alert('登录成功！');
+                const params = new URLSearchParams(window.location.search);
+                // 如果是从 admin 页面跳过来的，登录后跳回去，否则跳 index
+                window.location.href = params.get('redirect') === 'admin' ? 'admin.html' : 'admin.html';
+            } else {
+                alert('账号或密码不正确！');
+            }
+        });
+    </script>
 </body>
 </html>
