@@ -9,34 +9,23 @@ class NavigationApp {
     }
 
     async init() {
-        this.showLoading();
         await this.loadData();
-        this.bindEvents();
-        this.hideLoading();
+        const adminBtn = document.getElementById('adminBtn');
+        if (adminBtn) adminBtn.onclick = () => window.location.href = 'admin.html';
     }
 
     async loadData() {
         try {
             const res = await fetch(`${API_URL}/api/data`, { cache: 'no-cache' });
             const data = await res.json();
-            if (data && data.categories && data.categories.length > 0) {
+            if (data && data.categories) {
                 this.categories = data.categories;
                 this.links = data.links || [];
                 this.settings = data.settings || this.settings;
-                console.log("[Nav] 云端数据加载成功");
-            } else {
-                console.log("[Nav] 云端无数据，使用空配置");
+                this.render();
+                document.querySelector('#siteLogo span').textContent = this.settings.siteTitle;
             }
-        } catch (e) {
-            console.error("同步失败，使用离线模式");
-        }
-        this.applySettings();
-        this.render();
-    }
-
-    applySettings() {
-        const title = document.querySelector('#siteLogo span');
-        if (title) title.textContent = this.settings.siteTitle;
+        } catch (e) { console.log("云端同步失败"); }
     }
 
     render() {
@@ -56,14 +45,5 @@ class NavigationApp {
             `;
         }).join('');
     }
-
-    bindEvents() {
-        const adminBtn = document.getElementById('adminBtn');
-        if (adminBtn) adminBtn.onclick = () => window.location.href = 'admin.html';
-    }
-
-    showLoading() { document.getElementById('loadingOverlay').style.display = 'flex'; }
-    hideLoading() { document.getElementById('loadingOverlay').style.display = 'none'; }
 }
-
 new NavigationApp();
