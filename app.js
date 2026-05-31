@@ -62,59 +62,43 @@ loadLocalData() {
 
     // ========== 数据加载 ==========
 
- async loadData() {
-    console.log('[Nav] 正在从云端拉取最新配置...');
+// app.js
+async init() {
+    this.showLoading();
+    // 1. 先用默认数据垫底，保证页面不白屏
+    this.categories = this.getDefaultCategories();
+    this.links = this.getDefaultLinks();
+    this.render(); 
+
+    // 2. 异步加载云端，加载完立刻重新画一遍
+    await this.loadData();
     
-    // 1. 尝试从云端获取（增加 no-cache 确保拿到的是 KV 里的最新值）
+    this.bindEvents();
+    this.hideLoading();
+}
+
+async loadData() {
     try {
         const response = await fetch(`${API_URL}/api/data`, {
-            method: 'GET',
-            headers: { 'Content-Type': 'application/json' },
-            cache: 'no-cache' // 强制跳过浏览器缓存，直接问服务器要
+            cache: 'no-cache'
         });
-
         if (response.ok) {
             const cloudData = await response.json();
-            
-            // 只有当云端确实有分类数据时，才覆盖本地
+            // 只要云端有分类，就强制覆盖并重新渲染
             if (cloudData && cloudData.categories && cloudData.categories.length > 0) {
                 this.categories = cloudData.categories;
                 this.links = cloudData.links || [];
                 this.settings = { ...this.settings, ...(cloudData.settings || {}) };
                 
-                // 立即更新本地缓存
-                this.cacheToLocal();
-                console.log('[Nav] 云端同步成功');
+                console.log('[Nav] 云端配置加载成功，重新渲染界面');
                 this.applySettings();
-                this.render(); // 拿到云端数据后立即刷一下界面
-                return; // 成功后直接跳出，不再走后面的逻辑
+                this.render(); // <--- 关键：拿到数据后必须再调用一次 render
+                this.cacheToLocal();
             }
         }
     } catch (err) {
-        console.warn('[Nav] 云端连接异常，将尝试本地备份:', err.message);
+        console.error('[Nav] 同步失败:', err);
     }
-
-    // 2. 如果云端挂了或者没数据，才去翻本地箱底
-    const savedCategories = localStorage.getItem('nav_categories');
-    if (savedCategories) {
-        try {
-            this.categories = JSON.parse(savedCategories);
-            this.links = JSON.parse(localStorage.getItem('nav_links')) || [];
-            this.settings = { ...this.settings, ...JSON.parse(localStorage.getItem('nav_settings') || '{}') };
-            console.log('[Nav] 已加载本地缓存数据');
-        } catch (e) {
-            this.categories = this.getDefaultCategories();
-            this.links = this.getDefaultLinks();
-        }
-    } else {
-        // 3. 实在啥都没有（第一次用），用默认的
-        this.categories = this.getDefaultCategories();
-        this.links = this.getDefaultLinks();
-        console.log('[Nav] 使用默认初始数据');
-    }
-
-    this.applySettings();
-    this.render();
 }
 
     cacheToLocal() {
