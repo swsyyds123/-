@@ -143,17 +143,20 @@ saveData() {
         body: JSON.stringify(payload)
     })
     .then(res => res.json())
-    .then(data => {
-        if (data.success) {
-            console.log("云端同步成功！");
-            this.showToast('同步成功！数据已更新至云端数据库');
-            // 标记同步时间戳，让其他设备知道有更新了
-            localStorage.setItem('nav_sync', Date.now().toString());
-        } else {
-            console.error("同步失败:", data.error);
-            alert('同步失败：' + (data.error || '未知错误'));
-        }
-    })
+// admin.js 里的 saveData 关键部分
+.then(data => {
+    if (data.success) {
+        // 更新本地，防止当前页面变回默认
+        localStorage.setItem('nav_categories', JSON.stringify(this.categories));
+        localStorage.setItem('nav_links', JSON.stringify(this.links));
+        localStorage.setItem('nav_settings', JSON.stringify(this.settings));
+        localStorage.setItem('nav_sync', Date.now().toString()); 
+        
+        this.showToast('同步成功！数据已存入云端');
+    } else {
+        alert('保存失败：' + data.error);
+    }
+})
     .catch(err => {
         console.error('网络请求错误:', err);
         alert('无法连接到 Worker，请检查 admin.js 里的 API_URL 是否正确');
