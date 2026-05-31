@@ -81,52 +81,31 @@
         </div>
     </div>
 
-    <script>
-        const rememberMe = document.getElementById('rememberMe');
-        const rememberDuration = document.getElementById('rememberDuration');
-
-        rememberMe.addEventListener('change', function() {
-            rememberDuration.style.display = this.checked ? 'flex' : 'none';
-        });
-
-        document.getElementById('loginForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            
-            const username = document.getElementById('username').value.trim();
-            const password = document.getElementById('password').value;
-            const users = JSON.parse(localStorage.getItem('users') || '[]');
-            
-            if (!username || !password) {
-                alert('请填写完整的用户名和密码');
-                return;
-            }
-
-            const user = users.find(function(item) {
-                return (item.username === username || item.email === username) && item.password === password;
-            });
-            
-            if (!user) {
-                alert('账号或密码错误，请先注册或检查输入');
-                return;
-            }
-
-            const selectedDays = Number(document.querySelector('input[name="rememberDays"]:checked').value);
-            const sessionHours = 2;
-            const expiresAt = rememberMe.checked
-                ? Date.now() + selectedDays * 24 * 60 * 60 * 1000
-                : Date.now() + sessionHours * 60 * 60 * 1000;
-            
+<script>
+    document.getElementById('loginForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const username = document.getElementById('username').value.trim();
+        const password = document.getElementById('password').value;
+        
+        // --- 在这里直接写死你的管理员账号和密码 ---
+        const MY_ADMIN_USER = "admin"; 
+        const MY_ADMIN_PASS = "123..sws..716"; 
+        
+        if (username === MY_ADMIN_USER && password === MY_ADMIN_PASS) {
+            // 登录成功，保存一个永久不过期的凭证
             localStorage.setItem('currentUser', JSON.stringify({
-                id: user.id,
-                username: user.username,
-                loginTime: Date.now(),
-                expiresAt: expiresAt
+                username: username,
+                expiresAt: Date.now() + 999 * 24 * 60 * 60 * 1000 // 999天
             }));
             
-            alert('登录成功');
+            alert('登录成功，欢迎主人回来！');
             const params = new URLSearchParams(window.location.search);
             window.location.href = params.get('redirect') === 'admin' ? 'admin.html' : 'index.html';
-        });
-    </script>
+        } else {
+            alert('账号或密码错误！非本人禁止操作。');
+        }
+    });
+</script>
 </body>
 </html>
