@@ -52,37 +52,32 @@
             </div>
         </div>
     </div>
-
-    <script>
-        document.getElementById('loginForm').addEventListener('submit', function(e) {
-            e.preventDefault();
+<script>
+    document.getElementById('loginForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const username = document.getElementById('username').value.trim();
+        const password = document.getElementById('password').value;
+        
+        // 这里手动校验一次，确保只有你知道账号密码
+        const MY_ADMIN_USER = "admin"; 
+        const MY_ADMIN_PASS = "123..sws..716"; 
+        
+        if (username === MY_ADMIN_USER && password === MY_ADMIN_PASS) {
+            // 【关键】登录成功时，把密码也存进 localStorage
+            localStorage.setItem('currentUser', JSON.stringify({
+                username: username,
+                password: password, // 把密码存起来供 admin.js 使用
+                loginTime: Date.now(),
+                expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000 
+            }));
             
-            const username = document.getElementById('username').value.trim();
-            const password = document.getElementById('password').value;
-            
-            // ==========================================
-            // 在这里修改你想要的唯一账号和密码
-            // ==========================================
-            const MY_ADMIN_USER = "admin"; 
-            const MY_ADMIN_PASS = "123..sws..716"; 
-            
-            if (username === MY_ADMIN_USER && password === MY_ADMIN_PASS) {
-                // 登录成功，保存登录凭证
-                // admin.js 会检查 localStorage 里的 currentUser 和 expiresAt
-                localStorage.setItem('currentUser', JSON.stringify({
-                    username: username,
-                    loginTime: Date.now(),
-                    expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000 // 30天有效期
-                }));
-                
-                alert('登录成功！');
-                const params = new URLSearchParams(window.location.search);
-                // 如果是从 admin 页面跳过来的，登录后跳回去，否则跳 index
-                window.location.href = params.get('redirect') === 'admin' ? 'admin.html' : 'admin.html';
-            } else {
-                alert('账号或密码不正确！');
-            }
-        });
-    </script>
+            alert('登录成功！');
+            window.location.href = 'admin.html';
+        } else {
+            alert('账号或密码错误！');
+        }
+    });
+</script>
 </body>
 </html>
