@@ -1,10 +1,17 @@
 // ========== API 配置 ==========
 const API_URL = 'https://api.swsong.ccwu.cc';
-const ADMIN_PASSWORD = '123..sws..716';
 
 // 后台管理页面
-class AdminApp {
-    constructor() {
+constructor() {
+        // 从缓存里拿登录时存下的密码
+        const savedUser = localStorage.getItem('currentUser');
+        this.adminPassword = '';
+        if (savedUser) {
+            try {
+                this.adminPassword = JSON.parse(savedUser).password || '';
+            } catch(e) { this.adminPassword = ''; }
+        }
+
         if (!this.isAuthenticated()) {
             window.location.replace('login.html?redirect=admin');
             return;
@@ -126,14 +133,7 @@ class AdminApp {
 
     // ========== 保存数据到 Cloudflare Workers API ==========
 // 在 admin.js 中替换 saveData 函数
-saveData() {
-    // 准备要发送的数据
-    const payload = {
-        password: ADMIN_PASSWORD,
-        categories: this.categories,
-        links: this.links,
-        settings: this.settings
-    };
+saveData()
 
     console.log("准备同步数据到云端...", payload);
 
