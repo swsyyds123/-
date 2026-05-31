@@ -1,7 +1,7 @@
 // 前台导航页应用
 // 支持 Cloudflare Workers API + 本地缓存
 
-const API_URL = 'https://nav-api.2798402860.workers.dev';
+const API_URL = 'https://api.swsong.ccwu.cc';
 
 class NavigationApp {
     constructor() {
