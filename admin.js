@@ -2,184 +2,188 @@ const API_URL = 'https://api.swsong.ccwu.cc';
 
 class AdminApp {
     constructor() {
-        console.log("管理后台正在启动...");
         this.initData();
-        
         const savedUser = localStorage.getItem('currentUser');
-        if (!savedUser) {
-            console.log("未检测到登录信息，跳转登录页");
+        if (!this.isAuthenticated(savedUser)) {
             window.location.replace('login.html?redirect=admin');
             return;
         }
+        
+        const user = JSON.parse(savedUser);
+        this.adminPassword = user.password;
+        this.init();
+    }
 
-        try {
-            const user = JSON.parse(savedUser);
-            this.adminPassword = user.password || '';
-            if (Date.now() > user.expiresAt) {
-                window.location.replace('login.html');
-                return;
-            }
-        } catch (e) {
-            window.location.replace('login.html');
-            return;
-        }
-
-        // 绑定按钮事件
-        this.bindEvents();
-        // 尝试从云端加载数据
-        this.loadData();
+    isAuthenticated(data) {
+        if (!data) return false;
+        const u = JSON.parse(data);
+        return u.username && u.password && Date.now() < u.expiresAt;
     }
 
     initData() {
         this.categories = [];
         this.links = [];
         this.settings = { siteTitle: '导航中心', fontSize: 'medium', layout: 'grid' };
+        this.editingCategory = null;
     }
 
-    bindEvents() {
-        // 绑定顶部导航
-        document.querySelectorAll('.nav-item').forEach(btn => {
-            btn.onclick = (e) => {
-                const section = e.currentTarget.dataset.section;
-                document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
-                e.currentTarget.classList.add('active');
-                document.querySelectorAll('.panel-section').forEach(s => s.style.display = 'none');
-                const target = document.getElementById(section + 'Section');
-                if (target) target.style.display = 'block';
-            };
-        });
-
-        // 绑定基础按钮
-        const logoutBtn = document.getElementById('logoutBtn');
-        if (logoutBtn) logoutBtn.onclick = () => {
-            localStorage.removeItem('currentUser');
-            window.location.href = 'login.html';
-        };
-
-        const saveSettings = document.getElementById('saveSettings');
-        if (saveSettings) saveSettings.onclick = () => {
-            this.settings.siteTitle = document.getElementById('siteTitle').value;
-            this.saveData();
-        };
-
-        const addCategoryBtn = document.getElementById('addCategoryBtn');
-        if (addCategoryBtn) addCategoryBtn.onclick = () => {
-            this.editingCategory = null;
-            document.getElementById('categoryModalTitle').textContent = '添加分类';
-            document.getElementById('categoryName').value = '';
-            document.getElementById('categoryModal').classList.add('active');
-        };
-
-        // 弹窗取消按钮
-        document.querySelectorAll('.modal-close, .btn-secondary').forEach(btn => {
-            btn.addEventListener('click', () => {
-                document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active'));
-            });
-        });
-        
-        // 分类保存
-        document.getElementById('categoryModalSave').onclick = () => this.saveCategory();
-        // 快速添加链接
-        document.getElementById('quickAddBtn').onclick = () => this.quickAddLink();
+    init() {
+        this.bindEvents();
+        this.loadData();
     }
 
-    loadData() {
-        fetch(`${API_URL}/api/data`)
-            .then(res => res.json())
-            .then(data => {
-                console.log("云端数据已拉取:", data);
-                if (data.categories) this.categories = data.categories;
-                if (data.links) this.links = data.links;
-                if (data.settings) this.settings = { ...this.settings, ...data.settings };
-                this.renderUI();
-            })
-            .catch(err => {
-                console.error("加载云端失败，使用本地默认:", err);
-                this.renderUI();
-            });
+    // 从云端加载
+    async loadData() {
+        try {
+            const res = await fetch(`${API_URL}/api/data`);
+            const data = await res.json();
+            if (data.categories) {
+                this.categories = data.categories;
+                this.links = data.links || [];
+                this.settings = { ...this.settings, ...(data.settings || {}) };
+            } else {
+                // 如果云端没数据，加载默认值
+                this.categories = [ { id: '1', name: '嫖之呼吸', order: 0 } ];
+            }
+            this.refreshUI();
+        } catch (e) {
+            console.error("加载失败", e);
+        }
     }
 
-    renderUI() {
+    refreshUI() {
         this.renderCategories();
         this.renderLinks();
         this.updateCategorySelects();
         document.getElementById('siteTitle').value = this.settings.siteTitle || '';
     }
 
-    saveData() {
+    bindEvents() {
+        // 1. 顶部页签切换
+        document.querySelectorAll('.nav-item').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const section = e.currentTarget.dataset.section;
+                document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+                e.currentTarget.classList.add('active');
+                document.querySelectorAll('.panel-section').forEach(s => s.style.display = 'none');
+                document.getElementById(section + 'Section').style.display = 'block';
+            });
+        });
+
+        // 2. 返回主页与预览
+        document.getElementById('backBtn').onclick = () => window.location.href = 'index.html';
+        document.getElementById('previewBtn').onclick = () => window.open('index.html', '_blank');
+        document.getElementById('logoutBtn').onclick = () => {
+            localStorage.removeItem('currentUser');
+            window.location.href = 'login.html';
+        };
+
+        // 3. 分类与设置保存
+        document.getElementById('addCategoryBtn').onclick = () => {
+            this.editingCategory = null;
+            document.getElementById('categoryModalTitle').textContent = '添加分类';
+            document.getElementById('categoryName').value = '';
+            document.getElementById('categoryModal').classList.add('active');
+        };
+        document.getElementById('categoryModalSave').onclick = () => this.saveCategory();
+        document.getElementById('saveSettings').onclick = () => {
+            this.settings.siteTitle = document.getElementById('siteTitle').value;
+            this.saveData();
+        };
+        document.getElementById('quickAddBtn').onclick = () => this.quickAddLink();
+
+        // 4. 弹窗通用关闭
+        document.querySelectorAll('.modal-close, #categoryModalCancel').forEach(b => {
+            b.onclick = () => document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active'));
+        });
+    }
+
+    async saveData() {
         const payload = {
             password: this.adminPassword,
             categories: this.categories,
             links: this.links,
             settings: this.settings
         };
-
-        fetch(`${API_URL}/api/data`, {
+        const res = await fetch(`${API_URL}/api/data`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
-        })
-        .then(res => res.json())
-        .then(data => {
-            if (data.success) {
-                alert('同步成功！');
-                localStorage.setItem('nav_sync', Date.now().toString());
-            } else {
-                alert('同步失败：' + (data.error || '原因未知'));
-            }
-        })
-        .catch(err => alert('网络错误，无法连接 API'));
+        });
+        const result = await res.json();
+        if (result.success) {
+            this.showToast("同步成功！");
+            localStorage.setItem('nav_sync', Date.now().toString());
+        } else {
+            alert("同步失败：" + result.error);
+        }
     }
 
     renderCategories() {
-        const list = document.getElementById('categoriesList');
-        if (!list) return;
-        list.innerHTML = this.categories.map(c => `
+        const container = document.getElementById('categoriesList');
+        if (!container) return;
+        container.innerHTML = this.categories.map(c => `
             <div class="list-item">
-                <span>${c.name}</span>
-                <button class="btn-danger" onclick="app.deleteCategory('${c.id}')">删除</button>
+                <div class="list-item-name">${c.name}</div>
+                <div class="list-item-actions">
+                    <button class="delete-btn" onclick="window.app.deleteCategory('${c.id}')"><i class="fas fa-trash"></i></button>
+                </div>
             </div>
         `).join('');
     }
 
     saveCategory() {
-        const name = document.getElementById('categoryName').value;
+        const name = document.getElementById('categoryName').value.trim();
         if (!name) return;
         this.categories.push({ id: Date.now().toString(), name: name, order: this.categories.length });
         this.saveData();
         document.getElementById('categoryModal').classList.remove('active');
-        this.renderUI();
+        this.refreshUI();
     }
 
     deleteCategory(id) {
-        if (!confirm('确定删除吗？')) return;
+        if (!confirm("确定删除吗？")) return;
         this.categories = this.categories.filter(c => c.id !== id);
         this.saveData();
-        this.renderUI();
+        this.refreshUI();
+    }
+
+    renderLinks() {
+        const container = document.getElementById('linksList');
+        if (!container) return;
+        container.innerHTML = this.links.map(l => `
+            <div class="list-item">
+                <div class="list-item-name">${l.name} <small>(${l.url})</small></div>
+            </div>
+        `).join('');
     }
 
     updateCategorySelects() {
         const html = this.categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
-        const qc = document.getElementById('quickCategory');
-        if (qc) qc.innerHTML = '<option value="">选择分类</option>' + html;
+        document.getElementById('quickCategory').innerHTML = '<option value="">选择分类</option>' + html;
     }
 
     quickAddLink() {
-        const name = document.getElementById('quickName').value;
-        const url = document.getElementById('quickUrl').value;
-        const cat = document.getElementById('quickCategory').value;
-        if (!name || !url || !cat) return alert('请填全');
-        this.links.push({ id: Date.now().toString(), categoryId: cat, name, url, order: 0 });
+        const name = document.getElementById('quickName').value.trim();
+        const url = document.getElementById('quickUrl').value.trim();
+        const catId = document.getElementById('quickCategory').value;
+        if (!name || !url || !catId) return;
+        this.links.push({ id: Date.now().toString(), categoryId: catId, name, url, order: 0 });
         this.saveData();
-        this.renderUI();
+        document.getElementById('quickName').value = '';
+        document.getElementById('quickUrl').value = '';
+        this.refreshUI();
     }
 
-    renderLinks() {
-        const list = document.getElementById('linksList');
-        if (!list) return;
-        list.innerHTML = this.links.map(l => `<div class="list-item">${l.name} (${l.url})</div>`).join('');
+    showToast(msg) {
+        const div = document.createElement('div');
+        div.className = 'toast';
+        div.style.cssText = "position:fixed;bottom:2rem;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.8);color:white;padding:0.8rem 1.5rem;border-radius:8px;z-index:9999";
+        div.textContent = msg;
+        document.body.appendChild(div);
+        setTimeout(() => div.remove(), 2000);
     }
 }
 
-// 全局实例化
+// 绑定到 window 以便 HTML 里的 onclick 能找到
 window.app = new AdminApp();
