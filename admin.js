@@ -9,47 +9,47 @@ class AdminApp {
 
         this.categories = [];
         this.links = [];
-        this.settings = { siteTitle: '导航中心', fontSize: 'medium', backgroundStyle: 'gradient1' };
+        this.settings = { 
+            siteTitle: '导航中心', 
+            fontSize: 'medium', 
+            backgroundStyle: 'gradient1',
+            backgroundImage: '' 
+        };
         
-        this.editingCategoryId = null;
-        this.editingLinkId = null;
-
+        this.editingId = null; // 用于存储正在编辑的 ID
         this.init();
     }
 
     async init() {
         await this.loadData();
-        this.bindEvents();
-        this.setupDragSort();
+        this.bindGlobalEvents();
+        this.setupDragAndDrop();
     }
 
+    // --- 数据持久化 ---
     async loadData() {
         try {
             const res = await fetch(`${API_URL}/api/data`, { cache: 'no-cache' });
             const data = await res.json();
-            
             if (data && data.categories && data.categories.length > 0) {
                 this.categories = data.categories;
                 this.links = data.links || [];
-                this.settings = data.settings || this.settings;
-                console.log("已加载云端数据");
+                this.settings = { ...this.settings, ...data.settings };
             } else {
-                console.log("云端为空，加载内置 152 个链接...");
+                // 如果云端没数据，加载默认值
                 this.categories = this.getDefaultCategories();
                 this.links = this.getDefaultLinks();
-                // 首次加载内置数据后自动同步一次到云端
-                await this.syncToCloud();
             }
             this.refreshUI();
         } catch (e) {
-            console.error("API连接失败，加载内置数据");
+            console.error("加载失败，使用本地默认数据");
             this.categories = this.getDefaultCategories();
             this.links = this.getDefaultLinks();
             this.refreshUI();
         }
     }
 
-    async syncToCloud() {
+    async sync() {
         const payload = {
             password: this.adminPassword,
             categories: this.categories,
@@ -64,110 +64,27 @@ class AdminApp {
             });
             const result = await res.json();
             if (result.success) {
-                this.showToast("云端同步成功！前后台已一致。");
-            } else { console.error("同步失败", result.error); }
-        } catch (e) { console.error("同步异常", e); }
+                this.showToast("同步成功");
+            } else { alert("同步失败: " + result.error); }
+        } catch (e) { alert("云端连接断开"); }
     }
 
     refreshUI() {
         this.renderCategories();
         this.renderLinks();
         this.updateCategorySelects();
-        document.getElementById('siteTitle').value = this.settings.siteTitle || '';
+        this.renderSettings();
     }
 
-    // --- UI 切换逻辑 (修复打不开的问题) ---
-    bindEvents() {
-        // 顶部菜单切换
-        document.querySelectorAll('.nav-item').forEach(btn => {
-            btn.onclick = (e) => {
-                const section = e.currentTarget.dataset.section;
-                // 清除所有 active
-                document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
-                // 设置当前 active
-                e.currentTarget.classList.add('active');
-                // 隐藏所有 section
-                document.querySelectorAll('.panel-section').forEach(s => s.style.display = 'none');
-                // 显示对应 section
-                document.getElementById(section + 'Section').style.display = 'block';
-            };
-        });
-
-        // 退出登录
-        document.getElementById('logoutBtn').onclick = () => { localStorage.clear(); location.href='login.html'; };
-
-        // 弹窗关闭
-        document.querySelectorAll('.modal-close, .btn-secondary').forEach(b => {
-            b.addEventListener('click', () => {
-                document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active'));
-            });
-        });
-
-        // 保存分类
-        document.getElementById('categoryModalSave').onclick = async () => {
-            const name = document.getElementById('categoryName').value;
-            if (this.editingCategoryId) {
-                this.categories.find(c => c.id === this.editingCategoryId).name = name;
-            } else {
-                this.categories.push({ id: Date.now().toString(), name, order: this.categories.length });
-            }
-            document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active'));
-            this.refreshUI(); await this.syncToCloud();
-        };
-
-        // 保存链接
-        document.getElementById('linkModalSave').onclick = async () => {
-            const name = document.getElementById('linkName').value;
-            const url = document.getElementById('linkUrl').value;
-            const catId = document.getElementById('linkCategory').value;
-            if (this.editingLinkId) {
-                const l = this.links.find(link => link.id === this.editingLinkId);
-                if (l) { l.name = name; l.url = url; l.categoryId = catId; }
-            }
-            document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active'));
-            this.refreshUI(); await this.syncToCloud();
-        };
-
-        // 快速添加
-        document.getElementById('quickAddBtn').onclick = async () => {
-            const name = document.getElementById('quickName').value;
-            const url = document.getElementById('quickUrl').value;
-            const catId = document.getElementById('quickCategory').value;
-            if (name && url && catId) {
-                this.links.push({ id: Date.now().toString(), name, url, categoryId: catId });
-                this.refreshUI(); await this.syncToCloud();
-                document.getElementById('quickName').value = '';
-                document.getElementById('quickUrl').value = '';
-            }
-        };
-
-        // 全局设置保存
-        document.getElementById('saveSettings').onclick = async () => {
-            this.settings.siteTitle = document.getElementById('siteTitle').value;
-            await this.syncToCloud();
-        };
-        
-        // 搜索过滤
-        document.getElementById('linkSearch').oninput = () => this.renderLinks();
-        document.getElementById('linkFilterCategory').onchange = () => this.renderLinks();
-
-        // 添加分类按钮
-        document.getElementById('addCategoryBtn').onclick = () => {
-            this.editingCategoryId = null;
-            document.getElementById('categoryName').value = '';
-            document.getElementById('categoryModal').classList.add('active');
-        };
-    }
-
-    // --- 数据渲染 ---
+    // --- 分类管理 ---
     renderCategories() {
         const container = document.getElementById('categoriesList');
         this.categories.sort((a, b) => (a.order || 0) - (b.order || 0));
         container.innerHTML = this.categories.map(c => `
             <div class="list-item" draggable="true" data-id="${c.id}">
                 <div class="list-item-info">
-                    <i class="fas fa-grip-vertical" style="color:#ccc; margin-right:15px; cursor:move"></i>
-                    <span class="list-item-name">${c.name}</span>
+                    <i class="fas fa-grip-vertical" style="cursor:move; color:#888; margin-right:15px"></i>
+                    <span>${c.name}</span>
                 </div>
                 <div class="list-item-actions">
                     <button class="btn-secondary" onclick="app.openEditCategory('${c.id}')"><i class="fas fa-edit"></i></button>
@@ -177,18 +94,29 @@ class AdminApp {
         `).join('');
     }
 
+    openEditCategory(id) {
+        const cat = this.categories.find(c => c.id === id);
+        this.editingId = id;
+        document.getElementById('categoryModalTitle').textContent = "编辑分类";
+        document.getElementById('categoryName').value = cat.name;
+        document.getElementById('categoryModal').classList.add('active');
+    }
+
+    // --- 链接管理 ---
     renderLinks() {
         const container = document.getElementById('linksList');
-        const filterId = document.getElementById('linkFilterCategory').value;
-        const search = document.getElementById('linkSearch').value.toLowerCase();
+        const catId = document.getElementById('linkFilterCategory').value;
+        const kw = document.getElementById('linkSearch').value.toLowerCase();
+        
         let list = this.links;
-        if (filterId) list = list.filter(l => l.categoryId === filterId);
-        if (search) list = list.filter(l => l.name.toLowerCase().includes(search));
+        if (catId) list = list.filter(l => l.categoryId === catId);
+        if (kw) list = list.filter(l => l.name.toLowerCase().includes(kw));
+
         container.innerHTML = list.map(l => `
             <div class="list-item">
                 <div class="list-item-info">
-                    <span class="list-item-name">${l.name}</span>
-                    <small style="color:#999; margin-left:10px">${l.url}</small>
+                    <strong>${l.name}</strong>
+                    <span style="font-size:12px; color:#999; margin-left:10px">${l.url}</span>
                 </div>
                 <div class="list-item-actions">
                     <button class="btn-secondary" onclick="app.openEditLink('${l.id}')"><i class="fas fa-edit"></i></button>
@@ -198,43 +126,27 @@ class AdminApp {
         `).join('');
     }
 
-    // --- 弹窗回显 ---
-    openEditCategory(id) {
-        const cat = this.categories.find(c => c.id === id);
-        this.editingCategoryId = id;
-        document.getElementById('categoryName').value = cat.name;
-        document.getElementById('categoryModal').classList.add('active');
-    }
-
     openEditLink(id) {
         const link = this.links.find(l => l.id === id);
-        this.editingLinkId = id;
+        this.editingId = id;
         document.getElementById('linkName').value = link.name;
         document.getElementById('linkUrl').value = link.url;
         document.getElementById('linkCategory').value = link.categoryId;
         document.getElementById('linkModal').classList.add('active');
     }
 
-    async deleteCategory(id) {
-        if(!confirm("确定删除分类吗？")) return;
-        this.categories = this.categories.filter(c => c.id !== id);
-        this.links = this.links.filter(l => l.categoryId !== id);
-        this.refreshUI(); await this.syncToCloud();
-    }
-
-    async deleteLink(id) {
-        if(!confirm("确定删除链接吗？")) return;
-        this.links = this.links.filter(l => l.id !== id);
-        this.refreshUI(); await this.syncToCloud();
-    }
-
-    // --- 拖拽排序 ---
-    setupDragSort() {
+    // --- 拖拽逻辑修复 ---
+    setupDragAndDrop() {
         const list = document.getElementById('categoriesList');
         let draggedItem = null;
-        list.addEventListener('dragstart', (e) => { draggedItem = e.target; });
-        list.addEventListener('dragover', (e) => { e.preventDefault(); });
-        list.addEventListener('drop', async (e) => {
+
+        list.addEventListener('dragstart', (e) => {
+            draggedItem = e.target.closest('.list-item');
+            draggedItem.classList.add('dragging');
+        });
+
+        list.addEventListener('dragover', (e) => {
+            e.preventDefault();
             const afterElement = (container, y) => {
                 const elements = [...container.querySelectorAll('.list-item:not(.dragging)')];
                 return elements.reduce((closest, child) => {
@@ -245,14 +157,133 @@ class AdminApp {
                 }, { offset: Number.NEGATIVE_INFINITY }).element;
             };
             const after = afterElement(list, e.clientY);
-            if (!after) list.appendChild(draggedItem); else list.insertBefore(draggedItem, after);
+            if (!after) list.appendChild(draggedItem);
+            else list.insertBefore(draggedItem, after);
+        });
+
+        list.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            draggedItem.classList.remove('dragging');
+            // 重新计算顺序
             const items = [...list.querySelectorAll('.list-item')];
             items.forEach((item, index) => {
                 const cat = this.categories.find(c => c.id === item.dataset.id);
                 if (cat) cat.order = index;
             });
-            await this.syncToCloud();
+            await this.sync();
         });
+    }
+
+    // --- 事件绑定 ---
+    bindGlobalEvents() {
+        // 选项卡切换
+        document.querySelectorAll('.nav-item').forEach(btn => {
+            btn.onclick = (e) => {
+                const section = e.currentTarget.dataset.section;
+                document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+                e.currentTarget.classList.add('active');
+                document.querySelectorAll('.panel-section').forEach(s => s.style.display = 'none');
+                document.getElementById(section + 'Section').style.display = 'block';
+            };
+        });
+
+        // 弹窗关闭
+        document.querySelectorAll('.modal-close, .modal-footer .btn-secondary').forEach(b => {
+            b.onclick = () => document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active'));
+        });
+
+        // 分类保存
+        document.getElementById('categoryModalSave').onclick = async () => {
+            const name = document.getElementById('categoryName').value.trim();
+            if (!name) return;
+            if (this.editingId) {
+                this.categories.find(c => c.id === this.editingId).name = name;
+            } else {
+                this.categories.push({ id: Date.now().toString(), name, order: this.categories.length });
+            }
+            this.closeModals(); this.refreshUI(); await this.sync();
+        };
+
+        // 链接保存
+        document.getElementById('linkModalSave').onclick = async () => {
+            const name = document.getElementById('linkName').value.trim();
+            const url = document.getElementById('linkUrl').value.trim();
+            const catId = document.getElementById('linkCategory').value;
+            if (this.editingId) {
+                const l = this.links.find(l => l.id === this.editingId);
+                l.name = name; l.url = url; l.categoryId = catId;
+            }
+            this.closeModals(); this.refreshUI(); await this.sync();
+        };
+
+        // 快捷添加
+        document.getElementById('quickAddBtn').onclick = async () => {
+            const name = document.getElementById('quickName').value;
+            const url = document.getElementById('quickUrl').value;
+            const catId = document.getElementById('quickCategory').value;
+            if (name && url && catId) {
+                this.links.push({ id: Date.now().toString(), name, url, categoryId: catId, order: 0 });
+                this.refreshUI(); await this.sync();
+                document.getElementById('quickName').value = '';
+                document.getElementById('quickUrl').value = '';
+            }
+        };
+
+        // 个性化保存
+        document.getElementById('saveSettings').onclick = async () => {
+            this.settings.siteTitle = document.getElementById('siteTitle').value;
+            const bgUrl = document.getElementById('bgImageUrl').value;
+            if(bgUrl) {
+                this.settings.backgroundImage = bgUrl;
+                this.settings.backgroundStyle = 'custom';
+            }
+            await this.sync();
+        };
+
+        // 背景图上传
+        document.getElementById('localBgImage').onchange = (e) => {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            reader.onload = async (ev) => {
+                this.settings.backgroundImage = ev.target.result;
+                this.settings.backgroundStyle = 'custom';
+                this.previewImage(ev.target.result);
+                await this.sync();
+            };
+            reader.readAsDataURL(file);
+        };
+
+        document.getElementById('clearBgBtn').onclick = async () => {
+            this.settings.backgroundImage = '';
+            this.settings.backgroundStyle = 'gradient1';
+            document.getElementById('bgImageUrl').value = '';
+            document.getElementById('bgPreviewContainer').innerHTML = '';
+            await this.sync();
+        };
+
+        document.getElementById('linkSearch').oninput = () => this.renderLinks();
+        document.getElementById('linkFilterCategory').onchange = () => this.renderLinks();
+        document.getElementById('logoutBtn').onclick = () => { localStorage.clear(); location.href='login.html'; };
+        document.getElementById('addCategoryBtn').onclick = () => {
+            this.editingId = null;
+            document.getElementById('categoryName').value = '';
+            document.getElementById('categoryModal').classList.add('active');
+        };
+    }
+
+    closeModals() {
+        document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active'));
+        this.editingId = null;
+    }
+
+    renderSettings() {
+        document.getElementById('siteTitle').value = this.settings.siteTitle || '';
+        document.getElementById('bgImageUrl').value = (this.settings.backgroundStyle === 'custom' && !this.settings.backgroundImage.startsWith('data:')) ? this.settings.backgroundImage : '';
+        if (this.settings.backgroundImage) this.previewImage(this.settings.backgroundImage);
+    }
+
+    previewImage(src) {
+        document.getElementById('bgPreviewContainer').innerHTML = `<img src="${src}" style="max-height:150px; border-radius:8px">`;
     }
 
     updateCategorySelects() {
@@ -262,8 +293,22 @@ class AdminApp {
         document.getElementById('linkFilterCategory').innerHTML = '<option value="">全部分类</option>' + html;
     }
 
+    async deleteCategory(id) {
+        if (!confirm("确定删除分类吗？")) return;
+        this.categories = this.categories.filter(c => c.id !== id);
+        this.links = this.links.filter(l => l.categoryId !== id);
+        this.refreshUI(); await this.sync();
+    }
+
+    async deleteLink(id) {
+        if (!confirm("确定删除链接吗？")) return;
+        this.links = this.links.filter(l => l.id !== id);
+        this.refreshUI(); await this.sync();
+    }
+
     showToast(m) {
         const t = document.createElement('div');
+        t.className = 'toast';
         t.style.cssText = "position:fixed;bottom:2rem;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.8);color:white;padding:0.6rem 1.2rem;border-radius:8px;z-index:9999";
         t.textContent = m; document.body.appendChild(t);
         setTimeout(() => t.remove(), 2000);
@@ -281,7 +326,7 @@ class AdminApp {
     }
 
     getDefaultLinks() {
-        // 此处包含你之前发我的所有 152 个链接（篇幅原因，仅展示部分，建议保持此数组完整）
+             // 此处包含你之前发我的所有 152 个链接（篇幅原因，仅展示部分，建议保持此数组完整）
         return [
             {"id": "1", "categoryId": "1", "name": "炫猿", "url": "http://xydh.fun", "order": 0},
             {"id": "2", "categoryId": "1", "name": "YouTube", "url": "https://www.youtube.com/", "order": 1},
@@ -439,4 +484,4 @@ class AdminApp {
     }
 }
 
-window.app = new AdminApp();
+const app = new AdminApp();
