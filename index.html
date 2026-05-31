@@ -8,7 +8,15 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
-<body>
+<body class="font-medium">
+    <!-- 1. 加载遮罩层：必须在最前面，防止看到未渲染的紫色背景 -->
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            <p>正在进入导航...</p>
+        </div>
+    </div>
+
     <div id="app">
         <header class="header" id="header">
             <div class="header-content">
@@ -78,13 +86,6 @@
                 <button class="btn btn-secondary" id="confirmCancel">取消</button>
                 <button class="btn btn-danger" id="confirmDelete">删除</button>
             </div>
-        </div>
-    </div>
-
-    <div id="loadingOverlay" class="loading-overlay">
-        <div class="loading-spinner">
-            <div class="spinner"></div>
-            <p>加载中...</p>
         </div>
     </div>
 
