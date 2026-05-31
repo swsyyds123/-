@@ -1,5 +1,5 @@
 // ========== API 配置 ==========
-const API_URL = 'https://nav-api.2798402860.workers.dev';
+const API_URL = 'https://api.swsong.ccwu.cc';
 const ADMIN_PASSWORD = '123..sws..716';
 
 // 后台管理页面
