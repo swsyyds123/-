@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<base target="_blank">
 </head>
 <body class="static-page">
     <header class="static-header-full">
@@ -19,7 +20,7 @@
                 <a href="index.html">首页</a>
                 <a href="about.html">关于我们</a>
                 <a href="feedback.html" class="active" aria-current="page">用户反馈</a>
-                <a href="admin.html">后台管理</a>
+                <a href="javascript:void(0)" onclick="goAdmin()">后台管理</a>
             </nav>
             <button class="mobile-menu-toggle" id="mobileMenuToggle" aria-label="菜单" aria-expanded="false">
                 <i class="fas fa-bars"></i>
@@ -104,7 +105,7 @@
             <a href="index.html">首页</a>
             <a href="about.html">关于我们</a>
             <a href="feedback.html">用户反馈</a>
-            <a href="admin.html">后台管理</a>
+            <a href="javascript:void(0)" onclick="goAdmin()">后台管理</a>
         </nav>
         <p>导航页应用 © 2024</p>
     </footer>
@@ -321,5 +322,16 @@
             renderFeedback();
         });
     </script>
+
+<script>
+function goAdmin() {
+    const user = JSON.parse(localStorage.getItem('currentUser') || '{}');
+    if (user && user.expiresAt && Date.now() < user.expiresAt) {
+        window.location.href = 'admin.html';
+    } else {
+        window.location.href = 'login.html';
+    }
+}
+</script>
 </body>
 </html>
