@@ -5,6 +5,17 @@
 
 const API_URL = 'https://api.swsong.ccwu.cc';
 
+// === 登录守卫：未登录直接踢回登录页 ===
+(function checkLogin() {
+    const user = JSON.parse(localStorage.getItem('currentUser') || '{}');
+    const isLoggedIn = user && user.expiresAt && Date.now() < user.expiresAt;
+    if (!isLoggedIn) {
+        alert('请先登录');
+        window.location.href = 'login.html';
+        throw new Error('Not authenticated');
+    }
+})();
+
 // 1. 全局状态 (挂载到 window 确保全局可查)
 window.state = {
     categories: [],
